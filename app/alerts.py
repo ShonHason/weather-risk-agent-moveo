@@ -221,35 +221,48 @@ def notify(alerts, checked_at):
 def summary_text(alerts, channel_url=None):
     """A short, human-readable summary of the alerts, one line per hub.
 
-    Weather risk alert (7-day forecast): 2 hubs changed
-    - Seattle Hub: up Moderate (52) -> Severe (100), wind gusts 71 km/h on Thu, Nov 26
-    - Buffalo Hub: up Severe (88) -> Severe (100), wind gusts 84 km/h on Thu, Nov 26
-      (before: rain 45 mm on Thu, Nov 26)
-    Discuss in the team channel   <- a link, when channel_url is given
+    ⚠️ Weather risk alert (7-day forecast): 2 hubs changed
+    - Seattle Hub: 📈 up 🟡 Moderate (52) -> 🔴 Severe (100), 💨 wind gusts 71 km/h on Thu, Nov 26
+    - Buffalo Hub: 📈 up 🔴 Severe (88) -> 🔴 Severe (100), 💨 wind gusts 84 km/h on Thu, Nov 26
+      (before: 🌧️ rain 45 mm on Thu, Nov 26)
+    💬 Discuss in the team channel   <- a link, when channel_url is given
 
     channel_url: the team's Slack channel (ALERT_CHANNEL_URL). The link uses
     Slack's <url|label> format, so Slack shows just the label.
     """
     count = f"{len(alerts)} hub{'s' if len(alerts) != 1 else ''} changed"
-    lines = [f"Weather risk alert (7-day forecast): {count}"]
+    lines = [f"⚠️ Weather risk alert (7-day forecast): {count}"]
     for alert in alerts:
         now, before = _driver_text(alert["now"]), _driver_text(alert["before"])
-        line = (f"- {alert['hub_name']}: {alert['direction']} "
-                f"{alert['old_level']} ({alert['old_score']:.0f}) -> "
-                f"{alert['new_level']} ({alert['new_score']:.0f}), {now}")
+        arrow = DIRECTION_EMOJI[alert["direction"]]
+        line = (f"- {alert['hub_name']}: {arrow} {alert['direction']} "
+                f"{_level_text(alert['old_level'], alert['old_score'])} -> "
+                f"{_level_text(alert['new_level'], alert['new_score'])}, {now}")
         if before != now:
             line += f"\n  (before: {before})"
         lines.append(line)
     if channel_url:
-        lines.append(f"<{channel_url}|Discuss in the team channel>")
+        lines.append(f"<{channel_url}|💬 Discuss in the team channel>")
     return "\n".join(lines)
 
 
+# Emoji for the summary text, so a message can be read at a glance.
+LEVEL_EMOJI = {"Low": "🟢", "Moderate": "🟡", "High": "🟠", "Severe": "🔴"}
+HAZARD_EMOJI = {"snow": "❄️", "heavy_rain": "🌧️", "wind": "💨", "heat": "🔥", "cold": "🥶"}
+DIRECTION_EMOJI = {"up": "📈", "down": "📉"}
+
+
+def _level_text(level, score):
+    """'🟡 Moderate (52)'"""
+    return f"{LEVEL_EMOJI[level]} {level} ({score:.0f})"
+
+
 def _driver_text(driver):
-    """'wind gusts 71 km/h on Thu, Nov 26'"""
+    """'💨 wind gusts 71 km/h on Thu, Nov 26'"""
     value = driver["value"]
     value = f"{value:.0f}" if abs(value) >= 10 else f"{value:.1f}"
-    return (f"{MEASURES[driver['hazard']]} {value} {driver['unit']} "
+    return (f"{HAZARD_EMOJI[driver['hazard']]} {MEASURES[driver['hazard']]} "
+            f"{value} {driver['unit']} "
             f"on {_friendly_date(driver['date'])}")
 
 

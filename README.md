@@ -150,17 +150,18 @@ The `text` field comes first: a short summary for people, which Slack shows
 as the message. The full data follows:
 
 ```
-{"text": "Weather risk alert (7-day forecast): 2 hubs changed
-- Seattle Hub: up Moderate (52) -> Severe (100), wind gusts 71 km/h on Thu, Nov 26
-- Buffalo Hub: up Severe (88) -> Severe (100), wind gusts 84 km/h on Thu, Nov 26
-  (before: rain 45 mm on Thu, Nov 26)",
+{"text": "⚠️ Weather risk alert (7-day forecast): 2 hubs changed
+- Seattle Hub: 📈 up 🟡 Moderate (52) -> 🔴 Severe (100), 💨 wind gusts 71 km/h on Thu, Nov 26
+- Buffalo Hub: 📈 up 🔴 Severe (88) -> 🔴 Severe (100), 💨 wind gusts 84 km/h on Thu, Nov 26
+  (before: 🌧️ rain 45 mm on Thu, Nov 26)",
  "checked_at": "...",
  "alerts": [{"hub_name", "old_score", "new_score", "change", "since",
              "now": {...}, "before": {...}, "notes": [...], "message"}, ...]}
 ```
 
-Alerts are sorted biggest change first. Levels: Low (0-29), Moderate
-(30-59), High (60-79), Severe (80-100), set in `RISK_LEVELS` in
+Alerts are sorted biggest change first. Levels: 🟢 Low (0-29), 🟡 Moderate
+(30-59), 🟠 High (60-79), 🔴 Severe (80-100); hazards: ❄️ snow, 🌧️ rain,
+💨 wind, 🔥 heat, 🥶 cold; set in `RISK_LEVELS` in
 `app/scoring_config.py`.
 
 **Send alerts to Slack:** create an incoming webhook for a channel

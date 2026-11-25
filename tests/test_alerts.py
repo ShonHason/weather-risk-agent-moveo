@@ -263,10 +263,10 @@ def sample_alert(old=51.5, new=100.0, before_hazard="snow"):
 
 def test_summary_text_is_short_and_readable():
     text = alerts.summary_text([sample_alert(before_hazard="wind")])
-    assert text.splitlines()[0] == "Weather risk alert (7-day forecast): 1 hub changed"
+    assert text.splitlines()[0] == "⚠️ Weather risk alert (7-day forecast): 1 hub changed"
     # rounded scores, friendly date, no timestamp
-    assert ("- Seattle Hub: up Moderate (52) -> Severe (100), "
-            "snowfall 9.0 cm on Tue, Dec 1") in text
+    assert ("- Seattle Hub: 📈 up 🟡 Moderate (52) -> 🔴 Severe (100), "
+            "❄️ snowfall 9.0 cm on Tue, Dec 1") in text
     assert "T06:00" not in text and "since" not in text
 
 
@@ -279,13 +279,13 @@ def test_summary_text_shows_before_only_when_it_differs():
     same = alerts.summary_text([sample_alert(before_hazard="snow")])
     differs = alerts.summary_text([sample_alert(before_hazard="wind")])
     assert "before" not in same
-    assert "(before: wind gusts 72 km/h on Tue, Dec 1)" in differs
+    assert "(before: 💨 wind gusts 72 km/h on Tue, Dec 1)" in differs
 
 
 def test_summary_text_links_the_team_channel_when_set():
     url = "https://example.slack.com/archives/C123"
     with_link = alerts.summary_text([sample_alert()], channel_url=url)
-    assert with_link.splitlines()[-1] == f"<{url}|Discuss in the team channel>"
+    assert with_link.splitlines()[-1] == f"<{url}|💬 Discuss in the team channel>"
     assert "Discuss" not in alerts.summary_text([sample_alert()])
 
 
@@ -296,7 +296,7 @@ def test_notify_adds_channel_link_from_env(monkeypatch):
     monkeypatch.setattr(alerts, "urlopen",
                         lambda request, **kwargs: sent.append(request) or FakeResponse())
     alerts.notify([sample_alert()], "now")
-    assert "archives/C123|Discuss" in json.loads(sent[0].data)["text"]
+    assert "archives/C123|💬 Discuss" in json.loads(sent[0].data)["text"]
 
 
 def test_notify_posts_text_first_then_full_json(monkeypatch):
@@ -310,7 +310,7 @@ def test_notify_posts_text_first_then_full_json(monkeypatch):
     assert sent[0].full_url == "https://hooks.example.com/x"
     body = json.loads(sent[0].data)
     assert list(body) == ["text", "checked_at", "alerts"]
-    assert body["text"].startswith("Weather risk alert")
+    assert body["text"].startswith("⚠️ Weather risk alert")
     assert body["alerts"] == [alert]
 
 

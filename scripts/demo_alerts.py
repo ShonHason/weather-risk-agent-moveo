@@ -26,6 +26,8 @@ DEMO_WIND_FULL_AT = 70   # km/h; the real value is in app/scoring_config.py
 
 
 def main():
+    # The summary has emoji; don't crash on a terminal that can't show them.
+    sys.stdout.reconfigure(errors="replace")
     load_env()
     wind = config.FORECAST_SCALES["wind"]
     real_full_at = wind["full_at"]
