@@ -9,4 +9,4 @@ reasoning left out for length. Secrets are redacted.
 - [Session 2](session-2.md): started 2026-11-25 09:53 UTC, 34 user messages
 - [Session 3](session-3.md): started 2026-11-25 14:22 UTC, 45 user messages
 - [Session 4](session-4.md): started 2026-11-25 17:27 UTC, 9 user messages
-- [Session 5](session-5.md): started 2026-11-25 20:13 UTC, 2 user messages
+- [Session 5](session-5.md): started 2026-11-25 20:13 UTC, 14 user messages
