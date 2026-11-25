@@ -126,6 +126,35 @@ call `alerts.py`.)
   Model output is inserted as
   plain text (`textContent`), never as HTML, so an answer cannot inject
   markup or scripts into the page.
+- **Voice** (bonus, in the chat page only). A mic button uses the
+  browser's own speech recognition (Web Speech API): the words appear in
+  the text box while speaking. A spoken question gets a spoken reply: the
+  browser reads the short `answer` sentence aloud (the table and reasoning
+  stay on screen). Typed questions stay silent. Speech becomes text in the
+  browser, so the server and the agent are unchanged and there are no new
+  dependencies.
+  - *Sending:* listening continues through short pauses; after 2 s of
+    silence (`SILENCE_MS`) it stops and a "Sending in 3…" countdown
+    (`COUNTDOWN_SECONDS`) starts. Typing or clicking the mic cancels it, so
+    a misheard word can be fixed first; Enter or Send sends at once. Hands-
+    free when the words are right, a chance to fix them when they aren't.
+  - *Reply voice:* the browser's default voice sounds robotic, so the page
+    picks the most natural English voice installed, from a short preference
+    list (Edge "Natural" voices, macOS Premium/Enhanced voices, "Google US
+    English", Samantha/Ava/Zoe), at a slightly slower pace. Quality depends
+    on the browser and device: best in Edge, and on a Mac after downloading
+    a Premium voice. A cloud text-to-speech API would sound near-human
+    everywhere, but adds a key, a dependency and a cost per answer.
+    Answers are read one sentence at a time, because Chrome's voices stop
+    after about 15 s in one go.
+  - *Stopping the reply:* while an answer is read, the mic button turns
+    into a stop button (and the status line says so); clicking it or
+    pressing Esc stops the reading. Asking a new question, starting to
+    listen or starting a new conversation stops it too.
+  - *Limits:* works in Chrome, Edge and Safari, not Firefox (the button is
+    hidden where unsupported, so typing always works); needs HTTPS or
+    localhost and mic permission; Chrome sends the audio to Google's speech
+    service to transcribe it; English (`en-US`) only.
 - **Short-term risk score and alert** (`app/forecast.py`, `app/alerts.py`).
   The long-term score barely moves (NRI updates yearly, a 5-year window
   shifts once a year), so an alert on it would almost never fire. The alert
@@ -402,7 +431,6 @@ Out of scope, on purpose:
 - **Forecasts in the long-term score.** Investment decisions are about
   long-term exposure, so the main score uses 5 years of history only. The
   forecast feeds only the separate short-term score.
-- **Voice** (a bonus): listed in PLAN.md as optional, not built.
 - **Cost of disruption** (revenue, shipments per hub): we have no such data,
   so the score measures exposure, not financial impact.
 

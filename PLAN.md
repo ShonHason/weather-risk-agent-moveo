@@ -36,7 +36,7 @@
 - Hubs are fictional, located in real US cities. Defined in `data/hubs.json`. Adding a hub = adding one line (name, city, state, lat, lon, county FIPS). Region is derived from the state (US Census regions).
 - Exposure means long-term climate: 5 years of history. Forecasts are used only for the short-term alert score (and its agent tool).
 - "Last year" means the previous calendar year (2025).
-- Voice is out of scope.
+- Voice: browser speech only (Web Speech API), English, in the chat page (Step 15).
 
 ## Steps
 1. **Skeleton:** git init, `.gitignore`, `requirements.txt`, `.env.example`, `scripts/test.py`, `data/hubs.json`, README.md and DESIGN.md stubs.
@@ -57,6 +57,8 @@
 12. **Deploy:** Render free web service (`render.yaml`), pinned dependencies, docs. No scheduled scan (see Decisions).
 13. **Team channel link:** optional `ALERT_CHANNEL_URL`; each alert's text ends with a Slack link "Discuss in the team channel" (chosen over a link to the web chat). The chat page gets a round Slack-logo button (hover: "Team's Slack") to the same channel, via `GET /team-channel`.
 14. **Chat page design:** neutral confidence label (colour only for risk), score bars coloured by `RISK_LEVELS` with a legend, category column dropped when all rows share one, aligned message edges, centred empty state with the examples in a 2×2 grid.
+
+15. **Voice (bonus):** a mic button in the chat page using the browser's speech recognition. Listens through short pauses; after 2 s of silence a 3-second countdown, cancelled by typing or a mic click (Enter sends now). A spoken question gets its `answer` read aloud in the most natural installed voice (preference list, no cloud TTS), one sentence at a time; while reading, the mic becomes a stop button (Esc stops too); typed questions stay silent. Hidden where unsupported (Firefox). No server change, no dependencies.
 
 ## Reminder
 - Export the full session with the AI agent at the end (mandatory deliverable).

@@ -119,6 +119,25 @@
       border: 1px solid var(--line); border-radius: 8px;
     }
     #send { background: var(--accent); color: #fff; border-color: var(--accent); padding: 0 18px; }
+
+    /* Voice input: a round mic button, red while it is listening. */
+    #mic {
+      width: 44px; height: 44px; padding: 0; border-radius: 50%; flex-shrink: 0;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    #mic[hidden] { display: none; }
+    #mic svg { width: 20px; height: 20px; fill: var(--muted); }
+    #mic.listening { background: var(--error); border-color: var(--error); }
+    #mic.listening svg { fill: #fff; }
+    /* While an answer is read aloud, the mic becomes a stop button. */
+    #mic .stop-icon, #mic.speaking .mic-icon { display: none; }
+    #mic.speaking .stop-icon { display: block; fill: #fff; }
+    #mic.speaking { background: var(--accent); border-color: var(--accent); }
+
+    /* The voice status line ("Listening…", "Sending in 3…") above the input. */
+    form { flex-direction: column; }
+    #voice-status { margin: 0 auto 6px; font-size: 13px; color: var(--muted); }
+    #voice-status[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -160,8 +179,18 @@
   </main>
 
   <form id="ask">
+    <p id="voice-status" class="inner" hidden></p>
     <div class="inner">
       <textarea id="question" placeholder="Ask a question… (Enter to send, Shift+Enter for a new line)"></textarea>
+      <!-- Shown only in browsers with speech recognition (Chrome, Edge, Safari). -->
+      <button id="mic" type="button" hidden title="Ask by voice" aria-label="Ask by voice">
+        <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+        </svg>
+        <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>
+      </button>
       <button id="send" type="submit">Send</button>
     </div>
   </form>
@@ -292,15 +321,21 @@
       }
     }
 
-    async function send(text) {
+    // byVoice: the question was spoken, so the answer is read aloud too.
+    async function send(text, byVoice = false) {
       text = text.trim();
       if (!text) return;
+      stopSpeaking();
+      cancelCountdown();
+      stopListening();
+      voiceDraft = false;
       examples.remove();
       thread.classList.remove("empty");
       addMessage(el("div", text, "msg user"));
       const waiting = addMessage(el("div", "Thinking… (checking the hub data)", "msg thinking"));
       question.value = "";
       sendButton.disabled = true;
+      micButton.disabled = true;
 
       try {
         const response = await fetch("/chat", {
@@ -316,25 +351,196 @@
         const data = await response.json();
         sessionId = data.session_id;
         addMessage(renderAnswer(data.answer));
+        if (byVoice) speak(data.answer.answer);
       } catch (error) {
         waiting.remove();
         addMessage(el("div", "Could not reach the server: " + error.message, "msg error"));
       } finally {
         sendButton.disabled = false;
+        micButton.disabled = false;
         question.focus();
       }
     }
 
+    // --- Voice: the browser's own speech recognition and speech synthesis ---
+    // No server change: speech becomes text here, and the text goes to /chat
+    // like a typed question. Chrome sends the audio to Google to transcribe.
+    //
+    // Flow: click the mic and speak -> after SILENCE_MS without new words,
+    // listening stops -> "Sending in 3..." countdown, while the text can still
+    // be fixed -> sent. Typing or clicking the mic during the countdown
+    // cancels it; Send (or Enter) sends at once.
+    const SILENCE_MS = 2000;        // pause that ends the question
+    const COUNTDOWN_SECONDS = 3;    // time to cancel before it is sent
+
+    // The most natural English voices first (the browser default sounds
+    // robotic). Names differ per browser and OS; the first match wins.
+    const PREFERRED_VOICES = [
+      /Natural/i,              // Edge: Microsoft "... Online (Natural)" voices
+      /Premium|Enhanced/i,     // macOS / Safari downloadable voices
+      /^Google US English$/,   // Chrome
+      /Samantha|Ava|Zoe/i,     // macOS built-in voices
+    ];
+
+    const micButton = document.getElementById("mic");
+    const voiceStatus = document.getElementById("voice-status");
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;     // the active recognition while listening, else null
+    let heardSpeech = false;    // the current recognition heard words
+    let silenceTimer = null;
+    let countdownTimer = null;
+    let voiceDraft = false;     // the text in the box came from speech
+
+    function showStatus(text) {
+      voiceStatus.textContent = text;
+      voiceStatus.hidden = !text;
+    }
+
+    function bestVoice() {
+      const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
+      const american = voices.filter(v => v.lang === "en-US");
+      for (const pattern of PREFERRED_VOICES) {
+        const match = american.find(v => pattern.test(v.name)) || voices.find(v => pattern.test(v.name));
+        if (match) return match;
+      }
+      // No preferred voice: keep the browser's default. (Not "the first
+      // voice": macOS lists novelty voices like "Bubbles" among them.)
+      return null;
+    }
+    // Chrome loads its voice list in the background: start it now, so the
+    // list is ready by the first spoken answer.
+    if (window.speechSynthesis) speechSynthesis.getVoices();
+
+    // Read the short answer aloud (the table and reasoning stay on screen only).
+    // One sentence at a time: Chrome's voices stop after ~15 s in one go.
+    let speechId = 0;   // which answer is being read (ignores old "end" events)
+
+    function speak(text) {
+      if (!window.speechSynthesis) return;
+      const voice = bestVoice();
+      const id = ++speechId;
+      const sentences = text.split(/(?<=[.!?])\s+/);
+      sentences.forEach((sentence, i) => {
+        const utterance = new SpeechSynthesisUtterance(sentence);
+        utterance.lang = "en-US";
+        if (voice) utterance.voice = voice;
+        utterance.rate = 0.95;   // a little slower than default: easier to follow
+        if (i === sentences.length - 1) {
+          // The last sentence finished: back to the mic button.
+          utterance.onend = utterance.onerror = () => { if (id === speechId) setSpeaking(false); };
+        }
+        speechSynthesis.speak(utterance);
+      });
+      setSpeaking(true);
+    }
+
+    function stopSpeaking() {
+      if (window.speechSynthesis) speechSynthesis.cancel();
+      setSpeaking(false);
+    }
+
+    // While reading, the mic button shows a stop icon and stops the reading.
+    function setSpeaking(on) {
+      const wasSpeaking = micButton.classList.contains("speaking");
+      micButton.classList.toggle("speaking", on);
+      micButton.title = on ? "Stop reading" : "Ask by voice";
+      micButton.setAttribute("aria-label", micButton.title);
+      if (on) showStatus("Reading the answer… click ⏹ or press Esc to stop");
+      else if (wasSpeaking) showStatus("");
+    }
+
+    function startListening() {
+      stopSpeaking();
+      heardSpeech = false;
+      recognition = new Recognition();
+      recognition.lang = "en-US";
+      recognition.continuous = true;       // keep listening through short pauses
+      recognition.interimResults = true;   // show the words while speaking
+
+      recognition.onresult = event => {
+        heardSpeech = true;
+        voiceDraft = true;
+        question.value = Array.from(event.results, result => result[0].transcript).join("");
+        // Each new word restarts the silence timer.
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(() => recognition && recognition.stop(), SILENCE_MS);
+      };
+      recognition.onerror = event => {
+        // "no-speech" and "aborted" are normal (silence, or stopped by us).
+        if (event.error !== "no-speech" && event.error !== "aborted") {
+          question.placeholder = "Voice input failed (" + event.error + "). Type your question instead.";
+        }
+      };
+      // Listening ended: if words were heard, count down to sending them.
+      recognition.onend = () => {
+        recognition = null;
+        clearTimeout(silenceTimer);
+        micButton.classList.remove("listening");
+        showStatus("");
+        if (heardSpeech) startCountdown();
+      };
+
+      recognition.start();
+      micButton.classList.add("listening");
+      showStatus("Listening… pause when you are done");
+    }
+
+    // Stop listening without sending what was heard.
+    function stopListening() {
+      if (!recognition) return;
+      heardSpeech = false;
+      recognition.abort();
+    }
+
+    function startCountdown() {
+      let seconds = COUNTDOWN_SECONDS;
+      const update = () => showStatus("Sending in " + seconds + "… type or click 🎤 to cancel, Enter to send now");
+      update();
+      countdownTimer = setInterval(() => {
+        seconds -= 1;
+        if (seconds > 0) update();
+        else send(question.value, true);   // send() clears the countdown
+      }, 1000);
+    }
+
+    function cancelCountdown() {
+      if (!countdownTimer) return;
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      showStatus("");
+    }
+
+    if (Recognition) {
+      micButton.hidden = false;
+      // Mic click: stop listening early (then count down), cancel a
+      // countdown, stop reading an answer, or start listening.
+      micButton.addEventListener("click", () => {
+        if (recognition) recognition.stop();
+        else if (countdownTimer) cancelCountdown();
+        else if (micButton.classList.contains("speaking")) stopSpeaking();
+        else startListening();
+      });
+      // Esc stops reading an answer aloud.
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape") stopSpeaking();
+      });
+      // Typing cancels the countdown, so a misheard word can be fixed.
+      question.addEventListener("input", () => {
+        cancelCountdown();
+        if (!question.value.trim()) voiceDraft = false;
+      });
+    }
+
     document.getElementById("ask").addEventListener("submit", event => {
       event.preventDefault();
-      send(question.value);
+      send(question.value, voiceDraft);
     });
 
     // Enter sends; Shift+Enter adds a new line.
     question.addEventListener("keydown", event => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (!sendButton.disabled) send(question.value);
+        if (!sendButton.disabled) send(question.value, voiceDraft);
       }
     });
 
@@ -342,7 +548,10 @@
       button.addEventListener("click", () => send(button.textContent)));
 
     // A new conversation = forget the session and reload the page.
-    document.getElementById("new-chat").addEventListener("click", () => location.reload());
+    document.getElementById("new-chat").addEventListener("click", () => {
+      stopSpeaking();
+      location.reload();
+    });
 
     // Show the team channel button if the server has a channel link.
     fetch("/team-channel")

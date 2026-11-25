@@ -90,6 +90,16 @@ risk at the Chicago hub this week?" (uses the 7-day forecast).
 uvicorn app.api:app              # chat page: http://127.0.0.1:8000
 ```
 
+**Voice:** click the 🎤 button next to Send (Chrome, Edge or Safari; allow
+the microphone once), ask your question, and pause. After 2 s of silence a
+3-second "Sending in 3…" countdown starts: type or click 🎤 to cancel and
+fix the text, or press Enter to send now. The short answer is read aloud
+(click ⏹, where the mic was, or press Esc to stop it); typed questions stay
+silent. Not available in Firefox (the button is
+hidden). For a more natural voice on a Mac, download a Premium English
+voice (System Settings → Accessibility → Spoken Content → System voice →
+Manage Voices); in Edge, the "Natural" voices are used automatically.
+
 Add `--reload` while developing (it clears chat sessions on every code change).
 
 Activate the virtualenv first (`source .venv/bin/activate`). Otherwise a

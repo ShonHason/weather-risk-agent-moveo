@@ -11,7 +11,8 @@ exposed to winter disruption?" or "Why is the Dallas hub's risk high?" for 21
 fictional hubs in real US cities. It ranks and compares hubs, answers single
 weather questions ("What percentage of days in Denver last year had
 snowfall?"), explains its reasoning and handles follow-up questions. It runs
-as a web chat page on top of an API. A second, short-term score from the
+as a web chat page on top of an API, typed or by voice (spoken questions
+get a spoken answer). A second, short-term score from the
 7-day forecast powers risk-change alerts for the operations team, and lets
 the agent answer "what's the risk at Chicago this week?".
 
@@ -74,4 +75,6 @@ the agent answer "what's the risk at Chicago this week?".
 - Alerts need an external scheduler to call the webhook (e.g. cron).
 - Live at https://weather-risk-agent-sz0f.onrender.com (free hosting: it
   sleeps when idle, and the alert history resets on restart). Not built:
-  voice, and a scheduled weather scan on the hosted app.
+  a scheduled weather scan on the hosted app.
+- Voice uses the browser's speech service: Chrome, Edge and Safari (not
+  Firefox), English only.
