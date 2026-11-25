@@ -1,6 +1,7 @@
 # Design
 
-Work in progress. Filled in as the steps are built. See PLAN.md for the agreed decisions.
+How the Weather Risk Intelligence Agent is built, and why. Setup and
+commands are in README.md; the step-by-step decisions are in PLAN.md.
 
 ## System architecture
 
@@ -122,10 +123,14 @@ app/            application code
 data/
   hubs.json     the list of hubs (one line per hub)
   cache.db      SQLite cache, created on first use (not in git)
+evals/
+  cases.json    the 24 eval cases
+  checks.py     deterministic checks run on each answer
 scripts/
   test.py       runs unit tests or the smoke check
   chat.py       command-line chat with the agent (manual testing)
-tests/        unit tests
+  eval.py       runs the eval set against the real agent
+tests/        unit tests (external APIs and Claude are mocked)
 ```
 
 ## Data sources
@@ -210,8 +215,34 @@ LLM judge, so a failure always has a concrete reason.
 **SQLite**, from the Python standard library. One file (`data/cache.db`), no
 server to run. API responses are cached by request URL, so each request is
 sent once: faster answers, fewer API calls, and the demo keeps working if an
-API is slow. JSON files would work too, but SQLite also fits the planned score
-history. Postgres would be overkill for one process and a few MB of data.
+API is slow. JSON files would work too, but SQLite would also hold a score history
+(for the risk-change alert) without a new dependency. Postgres would be overkill for one process and a few MB of data.
+
+## Scope
+In scope: the four kinds of question in the assignment (rank, compare,
+single weather number, explain a score) for 21 hubs, with follow-ups, through
+a chat page and an API.
+
+Out of scope, on purpose:
+- **Forecasts.** The question is long-term exposure for investment
+  decisions, so the agent uses 5 years of history, not next week's weather.
+  Asked for a forecast, it says so.
+- **Voice** (a bonus), **the risk-change alert** (a bonus) and **deployment
+  to a URL**: listed in PLAN.md as optional, after the core works.
+- **Cost of disruption** (revenue, shipments per hub): we have no such data,
+  so the score measures exposure, not financial impact.
+
+## Uncertainty
+- Every answer carries a `confidence` (`high` / `medium` / `low`): high when
+  the tools answer the question directly, medium when the question had to be
+  interpreted, low when the data only partly covers it. The chat page shows
+  it as a badge.
+- Every answer lists its `assumptions` (e.g. "last year = 2025", "Denver =
+  the hub's coordinates"), so the analyst sees what the number depends on.
+- The score itself is not a probability: it ranks exposure on a 0-100 scale.
+  Small gaps (a few points) between hubs are within the uncertainty of the
+  data and the scale choices below, and should not decide an investment on
+  their own.
 
 ## Assumptions
 - Hubs are fictional, located in real US cities.

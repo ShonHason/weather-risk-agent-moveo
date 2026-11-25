@@ -1,7 +1,31 @@
 # Weather Risk Intelligence Agent
 
-An AI agent that helps analysts decide which distribution hubs are most exposed
-to severe weather. Work in progress.
+An AI agent that helps analysts decide which of 21 (fictional) US distribution
+hubs are most exposed to severe weather. It ranks hubs with a deterministic
+risk score built from public data (FEMA National Risk Index + Open-Meteo
+weather history), and Claude explains the results in a chat.
+
+- How it works and why: [DESIGN.md](DESIGN.md)
+- One-page summary: [DESCRIPTION.md](DESCRIPTION.md)
+
+## Quick start
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env             # add your ANTHROPIC_API_KEY
+uvicorn app.api:app              # open http://127.0.0.1:8000
+```
+
+Try the assignment's questions:
+
+- Which hubs in the Midwest are most exposed to winter disruption?
+- Compare Miami and Houston in terms of hurricane and flood exposure.
+- What percentage of days in Denver last year had snowfall?
+- Why is the Dallas hub's weather disruption risk high?
+
+The first question after a fresh install downloads the data (~1-2 min);
+after that it is cached in `data/cache.db`.
 
 ## Setup
 
