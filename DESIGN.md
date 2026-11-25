@@ -185,7 +185,7 @@ call `alerts.py`.)
     message) can take it to the team's channel in one click. It uses
     Slack's `<url|label>` link format; other receivers show it raw. The
     chat page shows the same link as a round Slack-logo button in the
-    header (hover label "Slack's Team Channel"). The page gets the link
+    header (hover label "Team's Slack"). The page gets the link
     from `GET /team-channel`, which returns it only if it starts with
     `https://` (so a bad setting can't become a `javascript:` link); with
     no link the button stays hidden. A failed
