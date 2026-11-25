@@ -166,9 +166,11 @@ call `alerts.py`.)
     `ALERT_WEBHOOK_URL` is set, alerts are also POSTed there as JSON
     (standard library only). The payload starts with a `text` field: one
     short line per hub, rounded scores, friendly dates ("Thu, Nov 26"),
-    "before" only when the driver changed. People read it, and Slack
-    incoming webhooks display it as the message; the full data follows
-    for programs. A failed
+    "before" only when the driver changed, and each score with a level in
+    words ("Moderate (52) -> Severe (100)"; bands in `RISK_LEVELS`). People
+    read it, and Slack incoming webhooks display it as the message; the
+    full data follows for programs. A rejected delivery reports the
+    receiver's reply (e.g. Slack's `invalid_payload`). A failed
     delivery doesn't fail the check: the alerts are already saved.
   - *No caching:* `fetch_json(..., use_cache=False)` always downloads the
     forecast; the permanent cache would freeze it.

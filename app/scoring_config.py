@@ -91,3 +91,6 @@ ALERT_WINDOW_DAYS = 3
 # ...and only when the old or the new score is at least this high: a move
 # between two low scores (e.g. 14 -> 28) is not worth an alert.
 ALERT_MIN_LEVEL = 40
+
+# Short-term risk in words, for alert messages: (lowest score, level).
+RISK_LEVELS = [(80, "Severe"), (60, "High"), (30, "Moderate"), (0, "Low")]

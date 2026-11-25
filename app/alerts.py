@@ -20,6 +20,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from app import scoring_config as config
@@ -116,6 +117,8 @@ def find_changes(past_by_hub, current_results, min_change=None, min_level=None):
             "hub_name": result["hub_name"],
             "old_score": before["score"],
             "new_score": result["score"],
+            "old_level": risk_level(before["score"]),
+            "new_level": risk_level(result["score"]),
             "change": change,
             "direction": direction,
             "since": before["checked_at"],
@@ -130,6 +133,14 @@ def find_changes(past_by_hub, current_results, min_change=None, min_level=None):
             ),
         })
     return sorted(alerts, key=lambda alert: abs(alert["change"]), reverse=True)
+
+
+def risk_level(score):
+    """A score in words: 52 -> 'Moderate' (bands in scoring_config.RISK_LEVELS)."""
+    for lowest, level in config.RISK_LEVELS:
+        if score >= lowest:
+            return level
+    return config.RISK_LEVELS[-1][1]
 
 
 def _describe(driver):
@@ -197,7 +208,11 @@ def notify(alerts, checked_at):
     try:
         with urlopen(request, timeout=10, context=SSL_CONTEXT):
             return "sent"
-    except OSError as error:   # network errors and HTTP error codes
+    except HTTPError as error:
+        # The receiver's reply says why, e.g. Slack's "invalid_payload".
+        reply = error.read().decode(errors="replace")[:200]
+        return f"failed: HTTP {error.code} {reply}"
+    except OSError as error:   # network errors
         return f"failed: {error}"
 
 
@@ -205,8 +220,8 @@ def summary_text(alerts):
     """A short, human-readable summary of the alerts, one line per hub.
 
     Weather risk alert (7-day forecast): 2 hubs changed
-    - Seattle Hub: up 52 -> 100, wind gusts 71 km/h on Thu, Nov 26
-    - Buffalo Hub: up 88 -> 100, wind gusts 84 km/h on Thu, Nov 26
+    - Seattle Hub: up Moderate (52) -> Severe (100), wind gusts 71 km/h on Thu, Nov 26
+    - Buffalo Hub: up Severe (88) -> Severe (100), wind gusts 84 km/h on Thu, Nov 26
       (before: rain 45 mm on Thu, Nov 26)
     """
     count = f"{len(alerts)} hub{'s' if len(alerts) != 1 else ''} changed"
@@ -214,7 +229,8 @@ def summary_text(alerts):
     for alert in alerts:
         now, before = _driver_text(alert["now"]), _driver_text(alert["before"])
         line = (f"- {alert['hub_name']}: {alert['direction']} "
-                f"{alert['old_score']:.0f} -> {alert['new_score']:.0f}, {now}")
+                f"{alert['old_level']} ({alert['old_score']:.0f}) -> "
+                f"{alert['new_level']} ({alert['new_score']:.0f}), {now}")
         if before != now:
             line += f"\n  (before: {before})"
         lines.append(line)

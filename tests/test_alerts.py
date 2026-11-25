@@ -265,8 +265,14 @@ def test_summary_text_is_short_and_readable():
     text = alerts.summary_text([sample_alert(before_hazard="wind")])
     assert text.splitlines()[0] == "Weather risk alert (7-day forecast): 1 hub changed"
     # rounded scores, friendly date, no timestamp
-    assert "- Seattle Hub: up 52 -> 100, snowfall 9.0 cm on Tue, Dec 1" in text
+    assert ("- Seattle Hub: up Moderate (52) -> Severe (100), "
+            "snowfall 9.0 cm on Tue, Dec 1") in text
     assert "T06:00" not in text and "since" not in text
+
+
+def test_risk_level_bands():
+    assert [alerts.risk_level(s) for s in [0, 29.9, 30, 59.9, 60, 80, 100]] == [
+        "Low", "Low", "Moderate", "Moderate", "High", "Severe", "Severe"]
 
 
 def test_summary_text_shows_before_only_when_it_differs():
@@ -289,6 +295,17 @@ def test_notify_posts_text_first_then_full_json(monkeypatch):
     assert list(body) == ["text", "checked_at", "alerts"]
     assert body["text"].startswith("Weather risk alert")
     assert body["alerts"] == [alert]
+
+
+def test_notify_reports_the_receivers_error(monkeypatch):
+    import io
+    from urllib.error import HTTPError
+
+    def rejected(request, **kwargs):
+        raise HTTPError(request.full_url, 400, "Bad Request", {}, io.BytesIO(b"invalid_payload"))
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.example.com/x")
+    monkeypatch.setattr(alerts, "urlopen", rejected)
+    assert alerts.notify([sample_alert()], "now") == "failed: HTTP 400 invalid_payload"
 
 
 def test_notify_failure_does_not_raise(monkeypatch):

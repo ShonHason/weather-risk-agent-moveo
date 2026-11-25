@@ -146,15 +146,26 @@ as the message. The full data follows:
 
 ```
 {"text": "Weather risk alert (7-day forecast): 2 hubs changed
-- Seattle Hub: up 52 -> 100, wind gusts 71 km/h on Thu, Nov 26
-- Buffalo Hub: up 88 -> 100, wind gusts 84 km/h on Thu, Nov 26
+- Seattle Hub: up Moderate (52) -> Severe (100), wind gusts 71 km/h on Thu, Nov 26
+- Buffalo Hub: up Severe (88) -> Severe (100), wind gusts 84 km/h on Thu, Nov 26
   (before: rain 45 mm on Thu, Nov 26)",
  "checked_at": "...",
  "alerts": [{"hub_name", "old_score", "new_score", "change", "since",
              "now": {...}, "before": {...}, "notes": [...], "message"}, ...]}
 ```
 
-Alerts are sorted biggest change first.
+Alerts are sorted biggest change first. Levels: Low (0-29), Moderate
+(30-59), High (60-79), Severe (80-100), set in `RISK_LEVELS` in
+`app/scoring_config.py`.
+
+**Send alerts to Slack:** create an incoming webhook for a channel
+(api.slack.com/apps -> Create New App -> From scratch -> Incoming Webhooks ->
+On -> Add New Webhook -> pick the channel) and put its
+`https://hooks.slack.com/services/...` URL in `ALERT_WEBHOOK_URL`. Slack
+posts the `text` field as the message. Treat the URL as a secret: anyone
+who has it can post to the channel. If a delivery fails, the check's
+`webhook` field shows the receiver's reply (e.g. `failed: HTTP 400
+invalid_payload`).
 
 **Demo** (forecasts rarely move 10 points within minutes):
 
