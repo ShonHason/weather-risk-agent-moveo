@@ -163,8 +163,12 @@ call `alerts.py`.)
     `X-Alert-Token` header (`ALERT_TOKEN`, compared in constant time), so
     strangers can't trigger it; with no token configured it is disabled.
   - *Delivery:* every alert is saved and listed at `GET /alerts`. If
-    `ALERT_WEBHOOK_URL` is set, alerts are also POSTed there as generic
-    JSON with a readable `message` (standard library only). A failed
+    `ALERT_WEBHOOK_URL` is set, alerts are also POSTed there as JSON
+    (standard library only). The payload starts with a `text` field: one
+    short line per hub, rounded scores, friendly dates ("Thu, Nov 26"),
+    "before" only when the driver changed. People read it, and Slack
+    incoming webhooks display it as the message; the full data follows
+    for programs. A failed
     delivery doesn't fail the check: the alerts are already saved.
   - *No caching:* `fetch_json(..., use_cache=False)` always downloads the
     forecast; the permanent cache would freeze it.
@@ -210,6 +214,7 @@ scripts/
   test.py       runs unit tests or the smoke check
   chat.py       command-line chat with the agent (manual testing)
   eval.py       runs the eval set against the real agent
+  demo_alerts.py  alert demo: baseline, in-memory scale change, re-check
 tests/        unit tests (external APIs and Claude are mocked)
 ```
 

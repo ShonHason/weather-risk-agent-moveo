@@ -252,15 +252,43 @@ class FakeResponse:
         pass
 
 
-def test_notify_posts_alerts_as_json(monkeypatch):
+def sample_alert(old=51.5, new=100.0, before_hazard="snow"):
+    """One real alert, built by find_changes."""
+    value, unit = {"snow": (9.0, "cm"), "wind": (72.4, "km/h")}[before_hazard]
+    before = {**past(old, 0), "hazard": before_hazard, "value": value, "unit": unit,
+              "date": "2026-12-01"}
+    return alerts.find_changes({"seattle": [before]}, [result("seattle", new)],
+                               min_change=10, min_level=40)[0]
+
+
+def test_summary_text_is_short_and_readable():
+    text = alerts.summary_text([sample_alert(before_hazard="wind")])
+    assert text.splitlines()[0] == "Weather risk alert (7-day forecast): 1 hub changed"
+    # rounded scores, friendly date, no timestamp
+    assert "- Seattle Hub: up 52 -> 100, snowfall 9.0 cm on Tue, Dec 1" in text
+    assert "T06:00" not in text and "since" not in text
+
+
+def test_summary_text_shows_before_only_when_it_differs():
+    same = alerts.summary_text([sample_alert(before_hazard="snow")])
+    differs = alerts.summary_text([sample_alert(before_hazard="wind")])
+    assert "before" not in same
+    assert "(before: wind gusts 72 km/h on Tue, Dec 1)" in differs
+
+
+def test_notify_posts_text_first_then_full_json(monkeypatch):
     sent = []
     monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.example.com/x")
     monkeypatch.setattr(alerts, "urlopen",
                         lambda request, **kwargs: sent.append(request) or FakeResponse())
-    status = alerts.notify([{"hub_id": "chicago"}], "2026-12-01T00:00:00+00:00")
+    alert = sample_alert()
+    status = alerts.notify([alert], "2026-12-01T00:00:00+00:00")
     assert status == "sent"
     assert sent[0].full_url == "https://hooks.example.com/x"
-    assert json.loads(sent[0].data)["alerts"] == [{"hub_id": "chicago"}]
+    body = json.loads(sent[0].data)
+    assert list(body) == ["text", "checked_at", "alerts"]
+    assert body["text"].startswith("Weather risk alert")
+    assert body["alerts"] == [alert]
 
 
 def test_notify_failure_does_not_raise(monkeypatch):
@@ -268,7 +296,7 @@ def test_notify_failure_does_not_raise(monkeypatch):
         raise OSError("connection refused")
     monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.example.com/x")
     monkeypatch.setattr(alerts, "urlopen", broken)
-    assert alerts.notify([{"hub_id": "chicago"}], "now").startswith("failed")
+    assert alerts.notify([sample_alert()], "now").startswith("failed")
 
 
 def test_notify_sends_nothing_without_alerts(monkeypatch):

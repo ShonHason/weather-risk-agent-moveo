@@ -140,15 +140,33 @@ scheduler. For example, every 6 hours with cron:
 0 */6 * * * curl -s -X POST http://127.0.0.1:8000/alerts/check -H "X-Alert-Token: <token>"
 ```
 
-If `ALERT_WEBHOOK_URL` is set, new alerts are also POSTed there as JSON
-(`{"checked_at": ..., "alerts": [{"hub_name", "old_score", "new_score",
-"change", "since", "now": {hazard, value, unit, date}, "before": {...},
-"message"}, ...]}`), biggest change first.
+If `ALERT_WEBHOOK_URL` is set, new alerts are also POSTed there as JSON.
+The `text` field comes first: a short summary for people, which Slack shows
+as the message. The full data follows:
 
-**Demo** (forecasts rarely move 10 points within minutes): run a check,
-lower one scale in `FORECAST_SCALES` in `app/scoring_config.py` (e.g. wind
-`full_at` 100 -> 70), restart the server, run a check again, then open
-`/alerts`. History is kept in `data/history.db`; delete it to start over.
+```
+{"text": "Weather risk alert (7-day forecast): 2 hubs changed
+- Seattle Hub: up 52 -> 100, wind gusts 71 km/h on Thu, Nov 26
+- Buffalo Hub: up 88 -> 100, wind gusts 84 km/h on Thu, Nov 26
+  (before: rain 45 mm on Thu, Nov 26)",
+ "checked_at": "...",
+ "alerts": [{"hub_name", "old_score", "new_score", "change", "since",
+             "now": {...}, "before": {...}, "notes": [...], "message"}, ...]}
+```
+
+Alerts are sorted biggest change first.
+
+**Demo** (forecasts rarely move 10 points within minutes):
+
+```bash
+python scripts/demo_alerts.py
+```
+
+It runs a baseline check on the real forecast in a temporary history, makes
+the wind scale stricter in memory only (no config file changes), runs a
+second check, and sends the resulting alerts to `ALERT_WEBHOOK_URL`. The
+real history (`data/history.db`) is not touched; delete that file to start
+the real alerts over.
 
 ## Add a hub
 

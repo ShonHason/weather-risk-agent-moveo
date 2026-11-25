@@ -24,7 +24,7 @@ from urllib.request import Request, urlopen
 
 from app import scoring_config as config
 from app.fetch import SSL_CONTEXT
-from app.forecast import score_hub_forecast
+from app.forecast import MEASURES, score_hub_forecast
 from app.hubs import load_hubs
 
 HISTORY_DB_PATH = Path(__file__).parent.parent / "data" / "history.db"
@@ -188,7 +188,10 @@ def notify(alerts, checked_at):
         return "not configured"
     if not alerts:
         return "nothing to send"
-    body = json.dumps({"checked_at": checked_at, "alerts": alerts}).encode()
+    # "text" first: a short summary a person can read (and that Slack
+    # displays directly), then the full data for programs.
+    body = json.dumps({"text": summary_text(alerts), "checked_at": checked_at,
+                       "alerts": alerts}, ensure_ascii=False).encode()
     request = Request(url, data=body, method="POST",
                       headers={"Content-Type": "application/json"})
     try:
@@ -196,6 +199,40 @@ def notify(alerts, checked_at):
             return "sent"
     except OSError as error:   # network errors and HTTP error codes
         return f"failed: {error}"
+
+
+def summary_text(alerts):
+    """A short, human-readable summary of the alerts, one line per hub.
+
+    Weather risk alert (7-day forecast): 2 hubs changed
+    - Seattle Hub: up 52 -> 100, wind gusts 71 km/h on Thu, Nov 26
+    - Buffalo Hub: up 88 -> 100, wind gusts 84 km/h on Thu, Nov 26
+      (before: rain 45 mm on Thu, Nov 26)
+    """
+    count = f"{len(alerts)} hub{'s' if len(alerts) != 1 else ''} changed"
+    lines = [f"Weather risk alert (7-day forecast): {count}"]
+    for alert in alerts:
+        now, before = _driver_text(alert["now"]), _driver_text(alert["before"])
+        line = (f"- {alert['hub_name']}: {alert['direction']} "
+                f"{alert['old_score']:.0f} -> {alert['new_score']:.0f}, {now}")
+        if before != now:
+            line += f"\n  (before: {before})"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _driver_text(driver):
+    """'wind gusts 71 km/h on Thu, Nov 26'"""
+    value = driver["value"]
+    value = f"{value:.0f}" if abs(value) >= 10 else f"{value:.1f}"
+    return (f"{MEASURES[driver['hazard']]} {value} {driver['unit']} "
+            f"on {_friendly_date(driver['date'])}")
+
+
+def _friendly_date(iso_date):
+    """'2026-11-26' -> 'Thu, Nov 26'"""
+    day = datetime.strptime(iso_date, "%Y-%m-%d")
+    return f"{day:%a, %b} {day.day}"
 
 
 def list_alerts(db_path=HISTORY_DB_PATH, limit=50):
