@@ -10,18 +10,28 @@ How one question is answered:
      FinalAnswer JSON schema. We validate it again with Pydantic.
 """
 
-from datetime import date
+import os
 
 import anthropic
 
 from app import scoring_config as config
-from app import tools
+from app import tools, weather
 from app.schemas import FinalAnswer
 
-MODEL = "claude-opus-5-5"
+# The model can be changed with the AGENT_MODEL environment variable (or .env).
+DEFAULT_MODEL = "claude-haiku-5-5"   # chosen by eval: see DESIGN.md
+# How much the model reasons before answering (AGENT_EFFORT): low, medium,
+# high, xhigh or max. Higher = slower and more tokens.
+DEFAULT_EFFORT = "medium"
+
+# Models that support the server-side refusal fallback (Haiku does not).
+FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5"}
 MAX_TOOL_ROUNDS = 8   # safety limit: a normal question needs 1-3 rounds
 
-LAST_YEAR = date.today().year - 1
+# The weather data period, computed by our code, so Claude never has to
+# work out years itself (e.g. "last 5 years" -> 2021-2025).
+PERIOD_START, PERIOD_END = weather.default_period()
+LAST_YEAR = PERIOD_END.year
 
 SYSTEM_PROMPT = f"""\
 You are a weather risk analyst for a US logistics company. Analysts ask you
@@ -30,9 +40,16 @@ where to invest in resilience upgrades.
 
 Only use numbers returned by the tools. Never calculate a new number
 yourself: no averages, sums, differences, ratios or percentages, and never
-invent or estimate a score, metric or ranking. If you need a number the tools
-don't return, compare in words instead: "much more frequent", not
-"twice as frequent". If the tools can't answer something, say so.
+invent or estimate a score, metric or ranking. For a difference between hubs,
+quote the gaps the tools return: rank_hubs gives the gap between
+consecutive hubs, compare_hubs the gaps between the compared hubs. For "how
+many times more", quote the count_ratios compare_hubs returns (weather days
+and hazard events per year only). Never state a ratio of two 0-100 scores or
+percentiles: it has no meaning. For anything else the tools don't return,
+compare in words instead: "much more frequent", not "twice as frequent". Don't summarize with your own round thresholds or
+ranges either ("above 85", "in the mid-90s"): quote the real values, or the
+min and max that rank_hubs returns ("between 85.8 and 98.9"). If the tools
+can't answer something, say so.
 
 How the risk score works (computed by the tools, 0-100, higher = more exposed):
 - Five categories: winter, hurricane, flood, severe_storm, heat. Overall score
@@ -41,6 +58,7 @@ How the risk score works (computed by the tools, 0-100, higher = more exposed):
   National Risk Index annualized frequency), as a national percentile across
   all US counties. A category takes its worst hazard.
 - Winter, heat and flood also use observed weather from the last 5 full years
+  ({PERIOD_START} to {PERIOD_END})
   (Open-Meteo): score = 70% NRI + 30% observed (snow days, days >= 35 C,
   days >= 25 mm rain per year). Hurricane and severe storm are NRI only,
   because rare events don't show up reliably in 5 years of weather.
@@ -69,7 +87,14 @@ Your final answer:
 - assumptions: the conventions and data limits that matter for this answer.
 - confidence: high when the tools answer the question directly; medium when
   you had to interpret the question; low when the data only partly covers it.
+- complete: true when the answer is final. Never answer with a plan or a
+  promise ("I'll check that next"): if you still need data, call the tool
+  now. If you do return an answer that still needs data, set complete false.
 """
+
+# Sent back to Claude when it returns an answer marked complete: false.
+INCOMPLETE_NUDGE = ("Your answer is marked incomplete. Call the tools you need "
+                    "now, then give the complete answer.")
 
 ANSWER_FORMAT = {"type": "json_schema", "schema": FinalAnswer.model_json_schema()}
 
@@ -79,13 +104,24 @@ class AgentError(Exception):
 
 
 class Agent:
-    def __init__(self, client=None):
+    def __init__(self, client=None, model=None):
         self.client = client or anthropic.Anthropic()
+        self.model = model or os.environ.get("AGENT_MODEL", DEFAULT_MODEL)
+        self.effort = os.environ.get("AGENT_EFFORT", DEFAULT_EFFORT)
         self.messages = []   # the whole conversation, sent on every request
+        self.turn = 0        # number of questions asked so far
+        # Every tool call made, for evaluation and debugging:
+        # {"turn", "name", "input", "output", "is_error"}
+        self.tool_log = []
+        # Tokens used by the whole conversation, to measure cost.
+        self.usage = {"input_tokens": 0, "output_tokens": 0}
+        # How often Claude returned an incomplete answer and was asked again.
+        self.retries = 0
 
     def ask(self, question):
         """Answer one question (with the conversation so far). Returns FinalAnswer."""
         history_length = len(self.messages)
+        self.turn += 1
         self.messages.append({"role": "user", "content": question})
         try:
             return self._run_loop()
@@ -95,30 +131,45 @@ class Agent:
             raise
 
     def _run_loop(self):
+        retried = False
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.client.beta.messages.create(
-                model=MODEL,
+                model=self.model,
                 max_tokens=16000,
                 system=SYSTEM_PROMPT,
                 tools=tools.TOOL_DEFINITIONS,
                 messages=self.messages,
-                output_config={"effort": "medium", "format": ANSWER_FORMAT},
-                # If a safety check declines a request, retry it on a
-                # fallback model instead of failing.
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
+                output_config={"effort": self.effort, "format": ANSWER_FORMAT},
+                **self._fallback_options(),
             )
+            self.usage["input_tokens"] += response.usage.input_tokens
+            self.usage["output_tokens"] += response.usage.output_tokens
             # Keep the full content (including thinking blocks) in history.
             self.messages.append({"role": "assistant", "content": response.content})
 
             if response.stop_reason == "tool_use":
                 self.messages.append({"role": "user", "content": self._run_tools(response)})
             elif response.stop_reason == "end_turn":
-                return self._parse_answer(response)
+                answer = self._parse_answer(response)
+                if answer.complete:
+                    return answer
+                # Claude says it still needs data: ask once to finish the job.
+                if retried:
+                    raise AgentError("The answer was still incomplete after a retry")
+                retried = True
+                self.retries += 1
+                self.messages.append({"role": "user", "content": INCOMPLETE_NUDGE})
             else:
                 raise AgentError(f"Claude stopped early: {response.stop_reason}")
 
         raise AgentError(f"No final answer after {MAX_TOOL_ROUNDS} tool rounds")
+
+    def _fallback_options(self):
+        """If a safety check declines a request, retry it on a fallback model
+        instead of failing. Only sent to models that support it."""
+        if self.model not in FALLBACK_MODELS:
+            return {}
+        return {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
 
     def _run_tools(self, response):
         """Run every tool call in the response. All results go back in one message."""
@@ -126,6 +177,9 @@ class Agent:
         for block in response.content:
             if block.type == "tool_use":
                 output, is_error = tools.run_tool(block.name, block.input)
+                self.tool_log.append({"turn": self.turn, "name": block.name,
+                                      "input": block.input, "output": output,
+                                      "is_error": is_error})
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,

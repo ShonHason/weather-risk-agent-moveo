@@ -15,3 +15,6 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# Eval output (changes every run)
+evals/last_run*.json

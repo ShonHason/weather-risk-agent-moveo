@@ -30,24 +30,56 @@ Work in progress. Filled in as the steps are built. See PLAN.md for the agreed d
   deterministic Python code. The system prompt forbids Claude from
   calculating any number itself (no averages, differences or ratios): it may
   only quote numbers the tools returned. So the tools return the derived
-  numbers a question needs, e.g. `compare_hubs` returns each hub's average
-  over the chosen categories and the highest hub per category. Why: an LLM's
-  arithmetic is not reliably correct, and a number we didn't compute can't
-  be traced or tested.
+  numbers a question needs:
+  - `list_hubs`: the hub count;
+  - `rank_hubs`: each hub's gap to the next hub, and the min/max score of
+    the returned hubs ("between 85.8 and 98.9");
+  - `compare_hubs`: each hub's average over the chosen categories, the
+    highest hub per category, the gap between every pair (always positive,
+    naming the higher hub, so Claude never flips a sign), and **ratios of
+    yearly counts** (weather days, hazard events per year: "2.6 times as
+    many heavy-rain days"). There are no ratios of the 0-100 scores: they
+    are percentiles, and a ratio of percentiles has no meaning;
+  - the system prompt states the exact data period (2021-01-01 to
+    2025-12-31), so Claude doesn't work out years either.
+
+  Why: an LLM's arithmetic is not reliably correct, and a number we didn't
+  compute can't be traced or tested. The eval showed that a prompt rule
+  alone was not enough (both models occasionally computed gaps, ratios,
+  counts and round thresholds); giving the tools the numbers fixed it.
 - **Agent loop** (hand-written, no framework): send the conversation, run the
   tools Claude asks for, send the results back, repeat until Claude returns
   its final answer. Capped at 8 tool rounds.
 - **Structured output.** The final answer must follow the `FinalAnswer`
   JSON schema (`app/schemas.py`: answer, ranking, reasoning, assumptions,
-  confidence). The schema is sent to the API as the required output format,
-  and the reply is validated again with Pydantic. An invalid answer raises an
-  error instead of reaching the user.
+  confidence, complete). The schema is sent to the API as the required output
+  format, and the reply is validated again with Pydantic. An invalid answer
+  raises an error instead of reaching the user.
+- **Completeness flag with one retry.** The eval caught the model answering
+  a follow-up with a plan ("I'll rank the Northeast hubs next") instead of
+  calling the tool. So `FinalAnswer` has a required `complete` field: if
+  Claude marks its answer incomplete, the code asks it once more to call the
+  tools and finish; if it's still incomplete, the user gets a clear error,
+  never a non-answer. A retry only costs time when it happens (it happened
+  mostly on follow-up questions, about 2 s extra on those).
 - **Conversation memory.** One `Agent` object keeps one conversation's full
   history, so follow-up questions work. A failed turn is removed from the
   history.
-- **Model.** `claude-opus-5-5`, effort `medium` (enough for 1-3 tool calls and
-  a short explanation). Server-side refusal fallback is on: if a safety check
-  declines a request, the API retries it on a fallback model.
+- **Model: Claude Haiku 5.5 by default, Opus 5.5 as an option**
+  (`AGENT_MODEL`), effort `medium` (`AGENT_EFFORT`). Chosen by running the
+  eval on both, every case 3 times (72 runs each):
+
+  | | Opus 5.5 | Haiku 5.5 |
+  |---|---|---|
+  | Runs passed | 72/72 | 70/72, then 72/72 after the fixes |
+  | Cost per question | ~$0.064 | ~$0.001 (~46x cheaper) |
+  | Median / slowest response | 10.5 s / 27 s | 6 s / 13 s |
+
+  All scoring is deterministic Python, so the model only picks tools and
+  explains; Haiku does that about as reliably as Opus at a fraction of the
+  cost and twice the speed. Effort `high` on Haiku was also measured: +1 s
+  median, +20% cost, no quality gain, so `medium` stays. Server-side refusal
+  fallback is sent only to models that support it (Opus, not Haiku).
 - **API** (`app/api.py`, FastAPI): `POST /chat` takes `{message, session_id?}`
   and returns `{session_id, answer}`; without a `session_id` a new
   conversation starts. `GET /hubs` and `GET /scores` return the hubs and the
@@ -141,6 +173,39 @@ every number comes from `app/scoring_config.py`.
 Every result includes the breakdown (NRI part, worst hazard, observed metric
 and value), so the agent can explain *why* a hub scores high.
 
+## Evaluation
+`python scripts/eval.py` runs 24 cases (`evals/cases.json`) against the real
+agent and checks each answer with deterministic code (`evals/checks.py`), no
+LLM judge, so a failure always has a concrete reason.
+
+- **Expected values come from our code at eval time** (e.g. the expected
+  Midwest winter ranking is `rank_hubs("winter", "Midwest")`), not
+  hard-coded, so the eval stays correct when the data is refreshed.
+- **Every case also runs three default checks:** each ranking entry is a
+  real hub and its score equals our code's; every number in the answer
+  appears in a tool output, the system prompt or the question; and any ratio
+  wording ("2.6 times", "twice") exactly matches a ratio a tool returned
+  ("40% more" always fails: no tool returns percent changes).
+- **Case types:** the 4 assignment questions, rankings by region/category,
+  single-number questions, multi-turn follow-ups, and traps: an unknown hub,
+  a forecast, a year without data, and questions that tempt the model to
+  calculate a difference or a ratio.
+- **`--repeat N`** runs each case N times: answers vary between runs, so a
+  pass rate says more than one pass.
+- **What the eval changed:** it found the model counting items ("the 21
+  hubs"), summarizing with its own round thresholds ("all above 85"),
+  subtracting scores ("2.9 points"), computing ratios ("twice as
+  frequent"), working out years, and once answering a follow-up with a plan
+  instead of data. Each fix went into the tools or the code (see "Claude
+  decides, code computes" and "Completeness flag"), not only the prompt.
+- **Cost and time** are printed per run (`--repeat 3` on Haiku: ~$0.10, ~2
+  minutes), so a model or effort change can be judged on quality, cost and
+  speed together.
+- **Latest results:** Haiku (default), every case 3 times: 72/72 runs,
+  444/444 checks, $0.11, 6 s median per question; 4 incomplete answers
+  (all follow-ups) were caught and retried successfully. Opus on the cases
+  it used to fail (ratio, difference, comparisons), 3 times each: 12/12.
+
 ## Data storage choice
 **SQLite**, from the Python standard library. One file (`data/cache.db`), no
 server to run. API responses are cached by request URL, so each request is
@@ -155,6 +220,13 @@ history. Postgres would be overkill for one process and a few MB of data.
 - Weather is taken at the hub's coordinates (Open-Meteo grid, ~10 km).
 
 ## Limitations
+- The eval's text checks (`mentions`) match phrases, so a correct answer in
+  unexpected words can fail; failed cases are worth reading before acting.
+- The "no invented numbers" check allows small whole numbers (0-10) and
+  rounding, so it can't catch every possible slip.
+- Haiku follows instructions a little less reliably than Opus; the eval and
+  the completeness retry cover the failures seen so far. Switch with
+  `AGENT_MODEL=claude-opus-5-5` if quality matters more than cost.
 - Conversation history lives in memory: it is lost when the server
   restarts, sessions never expire, and it works for one server process only.
   Two requests in the same session at the same moment are not guarded.

@@ -15,17 +15,21 @@ FINAL = {
     "reasoning": ["Ranked by winter score."],
     "assumptions": ["Exposure = 5-year climate."],
     "confidence": "high",
+    "complete": True,
 }
+
+
+USAGE = SimpleNamespace(input_tokens=100, output_tokens=20)
 
 
 def tool_call(name, tool_input, call_id="call_1"):
     block = SimpleNamespace(type="tool_use", id=call_id, name=name, input=tool_input)
-    return SimpleNamespace(stop_reason="tool_use", content=[block])
+    return SimpleNamespace(stop_reason="tool_use", content=[block], usage=USAGE)
 
 
 def final_answer(data=FINAL):
     block = SimpleNamespace(type="text", text=json.dumps(data))
-    return SimpleNamespace(stop_reason="end_turn", content=[block])
+    return SimpleNamespace(stop_reason="end_turn", content=[block], usage=USAGE)
 
 
 class FakeClient:
@@ -65,13 +69,56 @@ def test_agent_runs_tool_then_returns_validated_answer(fake_tools):
     assert tool_result["tool_use_id"] == "call_1"
 
 
+def test_agent_logs_tool_calls_per_turn(fake_tools):
+    client = FakeClient([tool_call("list_hubs", {}), final_answer(), final_answer()])
+    chat = agent.Agent(client)
+    chat.ask("first")
+    chat.ask("second")
+    assert chat.tool_log == [{"turn": 1, "name": "list_hubs", "input": {},
+                              "output": '{"ok": true}', "is_error": False}]
+    assert chat.turn == 2
+
+
+def test_incomplete_answer_gets_one_retry(fake_tools):
+    unfinished = {**FINAL, "answer": "I'll rank the Northeast next.", "complete": False}
+    client = FakeClient([final_answer(unfinished),
+                         tool_call("rank_hubs", {"region": "Northeast"}), final_answer()])
+    chat = agent.Agent(client)
+    answer = chat.ask("And in the Northeast?")
+    assert answer.complete and answer.answer == FINAL["answer"]
+    assert chat.retries == 1
+    assert client.requests[1]["messages"][-1] == {"role": "user", "content": agent.INCOMPLETE_NUDGE}
+    assert fake_tools == [("rank_hubs", {"region": "Northeast"})]
+
+
+def test_still_incomplete_after_retry_raises(fake_tools):
+    unfinished = {**FINAL, "complete": False}
+    chat = agent.Agent(FakeClient([final_answer(unfinished), final_answer(unfinished)]))
+    with pytest.raises(agent.AgentError, match="incomplete"):
+        chat.ask("hi")
+    assert chat.messages == []
+
+
 def test_agent_sends_schema_and_tools(fake_tools):
     client = FakeClient([final_answer()])
     agent.Agent(client).ask("hi")
     request = client.requests[0]
-    assert request["model"] == agent.MODEL
+    assert request["model"] == agent.DEFAULT_MODEL == "claude-haiku-5-5"
+    assert "fallbacks" not in request          # Haiku has no refusal fallback
     assert request["output_config"]["format"]["type"] == "json_schema"
     assert request["tools"] == tools.TOOL_DEFINITIONS
+
+
+def test_model_comes_from_env_and_opus_gets_fallback(fake_tools, monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "claude-opus-5-5")
+    monkeypatch.setenv("AGENT_EFFORT", "high")
+    client = FakeClient([final_answer()])
+    chat = agent.Agent(client)
+    chat.ask("hi")
+    assert client.requests[0]["model"] == "claude-opus-5-5"
+    assert client.requests[0]["output_config"]["effort"] == "high"
+    assert client.requests[0]["fallbacks"] == "default"    # Opus supports it
+    assert chat.usage == {"input_tokens": 100, "output_tokens": 20}
 
 
 def test_follow_up_question_includes_history(fake_tools):

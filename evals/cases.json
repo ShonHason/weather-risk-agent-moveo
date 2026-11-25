@@ -1,0 +1,207 @@
+[
+  {
+    "id": "assignment_midwest_winter",
+    "questions": ["Which hubs in the Midwest are most exposed to winter disruption?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "category": "winter", "region": "Midwest", "top": 3}
+    ]
+  },
+  {
+    "id": "assignment_miami_vs_houston",
+    "questions": ["Compare Miami and Houston in terms of hurricane and flood exposure."],
+    "checks": [
+      {"check": "tools_called", "any_of": ["compare_hubs", "get_hub_metrics"]},
+      {"check": "ranking_includes", "hubs": ["miami", "houston"], "category": "hurricane"},
+      {"check": "ranking_includes", "hubs": ["miami", "houston"], "category": "flood"}
+    ]
+  },
+  {
+    "id": "assignment_denver_snow_last_year",
+    "questions": ["What percentage of days in Denver last year had snowfall?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics"]},
+      {"check": "number_in_answer", "hub": "denver", "metric": "snow_days_pct", "year": 2025},
+      {"check": "ranking_empty"}
+    ]
+  },
+  {
+    "id": "assignment_dallas_why",
+    "questions": ["Why is the Dallas hub's weather disruption risk high?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics", "compare_hubs"]},
+      {"check": "mentions", "any_of": ["flood"]},
+      {"check": "mentions", "any_of": ["heat"]},
+      {"check": "mentions", "any_of": ["hail", "storm", "tornado"]}
+    ]
+  },
+  {
+    "id": "overall_top5",
+    "questions": ["Which 5 hubs have the highest overall weather disruption risk?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "top": 5}
+    ]
+  },
+  {
+    "id": "south_heat_full_ranking",
+    "questions": ["Rank all the hubs in the South by heat exposure."],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "category": "heat", "region": "South", "top": 6}
+    ]
+  },
+  {
+    "id": "hurricane_top3",
+    "questions": ["Which three hubs are most exposed to hurricanes?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "category": "hurricane", "top": 3}
+    ]
+  },
+  {
+    "id": "west_flood_top1",
+    "questions": ["Which hub in the West is most exposed to flooding?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "category": "flood", "region": "West", "top": 1}
+    ]
+  },
+  {
+    "id": "northeast_storms",
+    "questions": ["Which Northeast hubs are most at risk from severe storms like tornadoes, hail and strong wind?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "category": "severe_storm", "region": "Northeast", "top": 2}
+    ]
+  },
+  {
+    "id": "compare_three_winter",
+    "questions": ["Compare Buffalo, Minneapolis and Detroit on winter exposure. Which is worst?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["compare_hubs", "get_hub_metrics", "rank_hubs"]},
+      {"check": "ranking_includes", "hubs": ["buffalo", "minneapolis", "detroit"], "category": "winter"},
+      {"check": "mentions", "any_of": ["Buffalo"]}
+    ]
+  },
+  {
+    "id": "phoenix_hot_days_2024",
+    "questions": ["How many days in Phoenix reached 35°C or more in 2024?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics"]},
+      {"check": "number_in_answer", "hub": "phoenix", "metric": "hot_days", "year": 2024}
+    ]
+  },
+  {
+    "id": "seattle_heavy_rain_average",
+    "questions": ["On average, how many heavy-rain days per year does the Seattle hub get?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics"]},
+      {"check": "number_in_answer", "hub": "seattle", "metric": "heavy_rain_days_per_year"}
+    ]
+  },
+  {
+    "id": "buffalo_snow_share_5_years",
+    "questions": ["Over the last five years, what share of days had snowfall at the Buffalo hub?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics"]},
+      {"check": "number_in_answer", "hub": "buffalo", "metric": "snow_days_pct"}
+    ]
+  },
+  {
+    "id": "investment_top3",
+    "questions": ["We can fund resilience upgrades at 3 hubs this year. Which should we prioritize based on overall weather risk?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "top": 3}
+    ]
+  },
+  {
+    "id": "follow_up_other_region",
+    "questions": [
+      "Which hubs in the Midwest are most exposed to winter disruption?",
+      "And in the Northeast?"
+    ],
+    "checks": [
+      {"check": "tools_called", "any_of": ["rank_hubs"]},
+      {"check": "ranking_matches", "category": "winter", "region": "Northeast", "top": 3}
+    ]
+  },
+  {
+    "id": "follow_up_pronoun",
+    "questions": [
+      "Tell me about the Miami hub's weather risk.",
+      "How does it compare with New Orleans on hurricanes?"
+    ],
+    "checks": [
+      {"check": "ranking_includes", "hubs": ["miami", "new_orleans"], "category": "hurricane"},
+      {"check": "mentions", "any_of": ["New Orleans"]}
+    ]
+  },
+  {
+    "id": "follow_up_why",
+    "questions": [
+      "Which hub has the highest overall risk?",
+      "Why is it so high?"
+    ],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics", "compare_hubs", "rank_hubs"]},
+      {"check": "mentions", "any_of": ["Houston"]}
+    ]
+  },
+  {
+    "id": "why_seattle_low",
+    "questions": ["Why is the Seattle hub's overall risk relatively low?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_hub_metrics", "compare_hubs"]},
+      {"check": "mentions", "any_of": ["hurricane"]}
+    ]
+  },
+  {
+    "id": "trap_unknown_hub",
+    "questions": ["How exposed is our Boise hub to winter weather?"],
+    "checks": [
+      {"check": "mentions", "any_of": ["isn't", "is not", "there is no", "no boise", "not among", "not one of", "don't have", "do not have", "no hub", "no such"]}
+    ]
+  },
+  {
+    "id": "trap_forecast",
+    "questions": ["Will it snow in Chicago next week?"],
+    "checks": [
+      {"check": "ranking_empty"},
+      {"check": "mentions", "any_of": ["forecast"]}
+    ]
+  },
+  {
+    "id": "trap_year_outside_data",
+    "questions": ["What percentage of days in Denver in 2015 had snowfall?"],
+    "checks": [
+      {"check": "mentions", "any_of": ["2021"]},
+      {"check": "ranking_empty"}
+    ]
+  },
+  {
+    "id": "trap_difference",
+    "questions": ["By how many points does Houston's flood score exceed Miami's?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["compare_hubs", "rank_hubs"]}
+    ]
+  },
+  {
+    "id": "trap_ratio",
+    "questions": ["How many times more heavy-rain days does Houston get than Miami?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["compare_hubs"]},
+      {"check": "mentions", "any_of": ["2.6"]}
+    ]
+  },
+  {
+    "id": "method_question",
+    "questions": ["How is the risk score calculated?"],
+    "checks": [
+      {"check": "mentions", "any_of": ["70%", "70 %"]},
+      {"check": "mentions", "any_of": ["National Risk Index", "NRI"]},
+      {"check": "ranking_empty"}
+    ]
+  }
+]

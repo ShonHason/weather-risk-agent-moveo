@@ -20,6 +20,11 @@ def fake_score_hub(hub, db_path=None):
                        for c in config.CATEGORY_HAZARDS},
         "nri_hazards": {h: {"frequency": 1.0, "frequency_percentile": 50.0}
                         for hs in config.CATEGORY_HAZARDS.values() for h in hs},
+        # Yearly counts: miami 23.6 heavy-rain days, others 9.2; no hot days in chicago.
+        "metrics": {"snow_days_per_year": 0.0, "freezing_days_per_year": 5.0,
+                    "hot_days_per_year": 0.0 if hub["id"] == "chicago" else 10.0,
+                    "heavy_rain_days_per_year": 23.6 if hub["id"] == "miami" else 9.2,
+                    "windy_days_per_year": 3.0},
     }
 
 
@@ -32,15 +37,16 @@ def fake_scoring(monkeypatch):
 
 def test_list_hubs_filters_by_region():
     midwest = tools.list_hubs("Midwest")
-    assert {h["region"] for h in midwest} == {"Midwest"}
-    assert "chicago" in {h["id"] for h in midwest}
+    assert {h["region"] for h in midwest["hubs"]} == {"Midwest"}
+    assert "chicago" in {h["id"] for h in midwest["hubs"]}
+    assert midwest["count"] == len(midwest["hubs"])
 
 
 def test_find_hub_by_id_name_or_city():
     assert tools.find_hub("MIAMI")["id"] == "miami"
     assert tools.find_hub("Miami Hub")["id"] == "miami"
     assert tools.find_hub("salt_lake_city")["id"] == "salt_lake_city"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="The 21 known hubs"):
         tools.find_hub("Atlantis")
 
 
@@ -49,6 +55,20 @@ def test_rank_hubs_by_category_in_a_region():
     assert [h["hub_id"] for h in result["hubs"]] == ["minneapolis", "detroit", "chicago"]
     assert result["hubs"][0]["rank"] == 1
     assert result["ranked_by"] == "winter"
+
+
+def test_rank_hubs_returns_score_ranges_of_returned_hubs():
+    # Fake winter scores: minneapolis 80, detroit 70, chicago 60.
+    result = tools.rank_hubs(category="winter", region="Midwest", top_n=3)
+    assert result["score_ranges"]["winter"] == {"min": 60, "max": 80}
+    assert result["score_ranges"]["overall"] == {"min": 60, "max": 80}
+    assert result["score_ranges"]["heat"] == {"min": 10, "max": 10}
+
+
+def test_rank_hubs_returns_gap_to_next_hub():
+    # Fake winter scores: minneapolis 80, detroit 70, chicago 60.
+    hubs = tools.rank_hubs(category="winter", region="Midwest", top_n=3)["hubs"]
+    assert [h["gap_to_next"] for h in hubs] == [10, 10, None]
 
 
 def test_get_hub_metrics_adds_single_year_metrics():
@@ -73,12 +93,35 @@ def test_compare_hubs_returns_average_and_highest_hub():
     assert chicago["average_of_chosen_categories"] == 35.0    # (60 + 10) / 2
     assert result["highest_hub"]["winter"] == "miami"
     assert result["highest_hub"]["average_of_chosen_categories"] == "miami"
+    gaps = result["gaps"][0]
+    assert gaps["hubs"] == ["miami", "chicago"]
+    assert gaps["winter"] == {"higher": "miami", "gap": 30}
+    assert gaps["average_of_chosen_categories"] == {"higher": "miami", "gap": 15.0}
+    assert gaps["heat"] == {"higher": None, "gap": 0.0}       # tie
+
+
+def test_compare_hubs_returns_ratios_of_counts_only():
+    result = tools.compare_hubs(["Chicago", "Miami"], ["flood", "heat"])
+    ratios = {r["metric"]: r for r in result["count_ratios"][0]["ratios"]}
+    assert ratios["heavy_rain_days_per_year"] == {
+        "metric": "heavy_rain_days_per_year", "higher": "miami",
+        "higher_value": 23.6, "lower_value": 9.2, "ratio": 2.6}
+    assert ratios["hot_days_per_year"]["ratio"] is None      # 10 vs 0: no ratio
+    # Equal counts (hazard frequencies are all 1.0 here) are left out,
+    # and there are never ratios of 0-100 scores.
+    assert set(ratios) == {"heavy_rain_days_per_year", "hot_days_per_year"}
+
+
+def test_compare_hubs_gap_is_positive_whichever_hub_is_first():
+    # Chicago listed first, but Miami is higher: still a positive gap.
+    gaps = tools.compare_hubs(["Chicago", "Miami"], ["winter"])["gaps"][0]
+    assert gaps["winter"] == {"higher": "miami", "gap": 30}
 
 
 def test_run_tool_returns_json():
     output, is_error = tools.run_tool("list_hubs", {"region": "West"})
     assert not is_error
-    assert all(h["region"] == "West" for h in json.loads(output))
+    assert all(h["region"] == "West" for h in json.loads(output)["hubs"])
 
 
 def test_run_tool_reports_bad_input_as_error():

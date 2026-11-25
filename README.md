@@ -14,12 +14,32 @@ pip install -r requirements.txt
 cp .env.example .env             # then add your ANTHROPIC_API_KEY
 ```
 
+## Settings (`.env`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | (required) | Claude API key |
+| `AGENT_MODEL` | `claude-haiku-5-5` | or `claude-opus-5-5` (slower, ~46x pricier, see DESIGN.md) |
+| `AGENT_EFFORT` | `medium` | `low`, `medium` or `high` reasoning effort |
+
 ## Run the tests
 
 ```bash
 python scripts/test.py           # unit tests (mocked, fast, free)
 python scripts/test.py smoke     # one real API call
 ```
+
+## Run the eval set
+
+```bash
+python scripts/eval.py                # 24 cases against the real agent (~$0.04 on Haiku)
+python scripts/eval.py --repeat 3     # each case 3 times: pass rates
+python scripts/eval.py --case trap_ratio
+AGENT_MODEL=claude-opus-5-5 python scripts/eval.py    # compare another model
+```
+
+Prints pass/fail, cost and response times; details are saved to
+`evals/last_run_<model>_<effort>_<full|partial>.json`.
 
 ## Chat with the agent
 

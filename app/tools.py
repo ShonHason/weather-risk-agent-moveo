@@ -15,14 +15,29 @@ from app.hubs import STATE_TO_REGION, load_hubs
 CATEGORIES = list(config.CATEGORY_HAZARDS)
 REGIONS = sorted(set(STATE_TO_REGION.values()))
 
+# Yearly weather counts that belong to each category (for count ratios).
+CATEGORY_WEATHER_COUNTS = {
+    "winter": ["snow_days_per_year", "freezing_days_per_year"],
+    "heat": ["hot_days_per_year"],
+    "flood": ["heavy_rain_days_per_year"],
+    "severe_storm": ["windy_days_per_year"],
+    "hurricane": [],
+}
+
 
 # --- the tools ------------------------------------------------------------
 
 def list_hubs(region=None):
-    """All hubs (optionally in one region), with their location."""
+    """All hubs (optionally in one region), with their location and the count.
+
+    The count is included so Claude never has to count hubs itself.
+    """
     hubs = [h for h in load_hubs() if region is None or h["region"] == region]
-    return [{key: hub[key] for key in ("id", "name", "city", "state", "region")}
-            for hub in hubs]
+    return {
+        "count": len(hubs),
+        "hubs": [{key: hub[key] for key in ("id", "name", "city", "state", "region")}
+                 for hub in hubs],
+    }
 
 
 def get_hub_metrics(hub, year=None):
@@ -38,15 +53,34 @@ def get_hub_metrics(hub, year=None):
 
 
 def rank_hubs(category=None, region=None, top_n=None):
-    """Hubs ranked by overall score, or by one category, highest risk first."""
+    """Hubs ranked by overall score, or by one category, highest risk first.
+
+    Also returns numbers Claude would otherwise calculate itself:
+    - gap_to_next: how far each hub's score is above the next hub's
+      (None for the last hub), in the score the ranking is by;
+    - score_ranges: the lowest and highest score among the returned hubs, for
+      the overall score and each category ("between 85.8 and 98.9").
+    """
     hubs = [h for h in load_hubs() if region is None or h["region"] == region]
     ranked = scoring.rank([scoring.score_hub(h) for h in hubs], category)
     if top_n is not None:
         ranked = ranked[:top_n]
+    summaries = [_summary(h, rank) for rank, h in enumerate(ranked, start=1)]
+
+    def ranked_score(hub):
+        return hub["overall"] if category is None else hub["category_scores"][category]
+
+    for this_hub, next_hub in zip(summaries, summaries[1:] + [None]):
+        this_hub["gap_to_next"] = (
+            None if next_hub is None
+            else round(ranked_score(this_hub) - ranked_score(next_hub), 1)
+        )
+
     return {
         "ranked_by": category or "overall",
         "region": region or "all",
-        "hubs": [_summary(h, rank) for rank, h in enumerate(ranked, start=1)],
+        "hubs": summaries,
+        "score_ranges": _score_ranges(summaries),
     }
 
 
@@ -55,12 +89,18 @@ def compare_hubs(hubs, categories=None):
 
     Also returns the numbers an analyst usually wants from a comparison, so
     Claude never has to calculate them: each hub's average over the chosen
-    categories, and which hub scores highest in each category.
+    categories, which hub scores highest in each category, the gap between
+    every pair of compared hubs (which one is higher, and by how much), and
+    ratios of yearly counts between every pair ("2.6 times as many heavy-rain
+    days"). Ratios are only for counts, never for the 0-100 scores: a ratio
+    of two percentiles has no meaning.
     """
     categories = categories or CATEGORIES
     comparison = []
+    all_scored = []
     for name in hubs:
         scored = scoring.score_hub(find_hub(name))
+        all_scored.append(scored)
         scores = [scored["categories"][c]["score"] for c in categories]
         comparison.append({
             "hub_id": scored["hub_id"],
@@ -78,7 +118,9 @@ def compare_hubs(hubs, categories=None):
     highest["average_of_chosen_categories"] = max(
         comparison, key=lambda hub: hub["average_of_chosen_categories"])["hub_id"]
 
-    return {"categories": categories, "hubs": comparison, "highest_hub": highest}
+    return {"categories": categories, "hubs": comparison, "highest_hub": highest,
+            "gaps": _pair_gaps(comparison, categories),
+            "count_ratios": _pair_count_ratios(all_scored, categories)}
 
 
 # --- helpers ---------------------------------------------------------------
@@ -89,8 +131,9 @@ def find_hub(text):
     for hub in load_hubs():
         if wanted in (hub["id"], hub["name"].lower(), hub["city"].lower()):
             return hub
-    known = ", ".join(h["city"] for h in load_hubs())
-    raise ValueError(f"Unknown hub '{text}'. Known hubs: {known}")
+    known = [h["city"] for h in load_hubs()]
+    raise ValueError(f"Unknown hub '{text}'. The {len(known)} known hubs are: "
+                     f"{', '.join(known)}")
 
 
 def _summary(scored, rank):
@@ -102,6 +145,77 @@ def _summary(scored, rank):
         "overall": scored["overall"],
         "category_scores": {c: r["score"] for c, r in scored["categories"].items()},
     }
+
+
+def _pair_gaps(comparison, categories):
+    """For every pair of compared hubs and every score: which hub is higher
+    and by how much (always positive, so Claude never flips a sign).
+
+    Example: {"hubs": ["houston", "miami"],
+              "flood": {"higher": "houston", "gap": 13.0}, ...}
+    """
+    def gap(a_hub, a_score, b_hub, b_score):
+        if a_score == b_score:
+            return {"higher": None, "gap": 0.0}
+        higher = a_hub if a_score > b_score else b_hub
+        return {"higher": higher, "gap": round(abs(a_score - b_score), 1)}
+
+    gaps = []
+    for i, a in enumerate(comparison):
+        for b in comparison[i + 1:]:
+            pair = {"hubs": [a["hub_id"], b["hub_id"]]}
+            for name in ["overall", "average_of_chosen_categories"]:
+                pair[name] = gap(a["hub_id"], a[name], b["hub_id"], b[name])
+            for c in categories:
+                pair[c] = gap(a["hub_id"], a["categories"][c]["score"],
+                              b["hub_id"], b["categories"][c]["score"])
+            gaps.append(pair)
+    return gaps
+
+
+def _pair_count_ratios(all_scored, categories):
+    """For every pair of hubs: how many times higher one hub's yearly counts are.
+
+    Covers the observed weather days of the chosen categories and the NRI
+    hazard events per year. Example entry:
+        {"metric": "heavy_rain_days_per_year", "higher": "houston",
+         "higher_value": 23.6, "lower_value": 9.2, "ratio": 2.6}
+    ratio is None when the lower value is 0 (it would be infinite).
+    """
+    def counts(scored):
+        values = {}
+        for c in categories:
+            for metric in CATEGORY_WEATHER_COUNTS[c]:
+                values[metric] = scored["metrics"][metric]
+            for hazard in config.CATEGORY_HAZARDS[c]:
+                values[f"{hazard}_events_per_year"] = scored["nri_hazards"][hazard]["frequency"] or 0.0
+        return values
+
+    pairs = []
+    for i, a in enumerate(all_scored):
+        for b in all_scored[i + 1:]:
+            a_counts, b_counts = counts(a), counts(b)
+            ratios = []
+            for metric in a_counts:
+                a_value, b_value = a_counts[metric], b_counts[metric]
+                if a_value == b_value:
+                    continue   # equal counts: no ratio worth stating
+                higher, high, low = ((a["hub_id"], a_value, b_value) if a_value > b_value
+                                     else (b["hub_id"], b_value, a_value))
+                ratios.append({"metric": metric, "higher": higher,
+                               "higher_value": high, "lower_value": low,
+                               "ratio": round(high / low, 1) if low > 0 else None})
+            pairs.append({"hubs": [a["hub_id"], b["hub_id"]], "ratios": ratios})
+    return pairs
+
+
+def _score_ranges(summaries):
+    """{"overall": {"min": .., "max": ..}, "winter": {...}, ...} over these hubs."""
+    columns = {"overall": [h["overall"] for h in summaries]}
+    for c in CATEGORIES:
+        columns[c] = [h["category_scores"][c] for h in summaries]
+    return {name: {"min": min(values), "max": max(values)}
+            for name, values in columns.items() if values}
 
 
 def _category_detail(scored, category):
@@ -152,7 +266,9 @@ TOOL_DEFINITIONS = [
         "name": "rank_hubs",
         "description": (
             "Rank hubs by overall risk score, or by one hazard category, highest "
-            "risk first. Optionally only one region, and only the top N."
+            "risk first. Optionally only one region, and only the top N. Also "
+            "returns each hub's gap to the next hub, and the min and max score "
+            "of the returned hubs per category."
         ),
         "input_schema": {
             "type": "object",
@@ -169,7 +285,9 @@ TOOL_DEFINITIONS = [
         "description": (
             "Compare two or more hubs side by side: category scores with the NRI "
             "hazard frequencies and observed weather behind them, each hub's "
-            "average over the chosen categories, and the highest hub per category."
+            "average over the chosen categories, the highest hub per category, "
+            "the score gaps between every pair of compared hubs, and ratios of "
+            "yearly counts (weather days, hazard events) between every pair."
         ),
         "input_schema": {
             "type": "object",

@@ -2,7 +2,8 @@
 
 ## Decisions
 - **LLM:** Claude (official Anthropic SDK), raw tool-use loop, no agent framework.
-  - Model `claude-opus-5-5`, effort `medium`, server-side refusal fallback on.
+  - Model `claude-haiku-5-5` by default (chosen by eval: ~46x cheaper, ~2x faster, same pass rate after fixes); `claude-opus-5-5` via `AGENT_MODEL`. Effort `medium` (`AGENT_EFFORT`; `high` measured: slower, no gain). Refusal fallback only for models that support it (Opus).
+  - `FinalAnswer.complete`: an answer marked incomplete gets one automatic retry, then a clear error.
   - Final answer: JSON schema sent as the API's output format, then validated with Pydantic.
   - `.env` is read by a small helper (`app/env.py`), no `python-dotenv`.
 - **Structured output:** Pydantic models → JSON schema, validated in code.
@@ -22,9 +23,9 @@
 - **Storage:** SQLite (API cache and score history).
 - **API:** FastAPI, run with uvicorn. Server creates a `session_id` when none is sent. **UI:** a single HTML page served by FastAPI.
 - **Chat memory:** in memory, keyed by `session_id`.
-- **Numbers come only from code.** Claude may only use numbers returned by tools, never calculate new ones (system prompt rule). Tools return the derived numbers analysts need (e.g. `compare_hubs` returns averages and the highest hub per category).
+- **Numbers come only from code.** Claude may only use numbers returned by tools, never calculate new ones (system prompt rule). Tools return the derived numbers analysts need: hub count, gaps between consecutive ranked hubs, score ranges, pair gaps (positive, naming the higher hub), averages, highest hub, and ratios of yearly counts only (never of 0-100 scores). The prompt states the data period.
 - **Tests:** pytest; `httpx` approved as a test-only dependency for API tests.
-- **Eval:** deterministic checks (tool used, ranking order, numbers within tolerance).
+- **Eval:** 24 cases in `evals/cases.json`, deterministic checks only (no LLM judge). Expected values are computed by our code at eval time. Every case also checks: scores match the tools, no number the tools didn't return (incl. own round thresholds like "above 85"), no ratio wording. `--repeat N` measures pass rates. `rank_hubs` returns min/max score ranges so summaries can use real numbers.
 
 ## Assumptions
 - Hubs are fictional, located in real US cities. Defined in `data/hubs.json`. Adding a hub = adding one line (name, city, state, lat, lon, county FIPS). Region is derived from the state (US Census regions).
@@ -39,7 +40,7 @@
 4. **Agent:** Claude tool-use loop. Tools: `list_hubs`, `get_hub_metrics`, `rank_hubs`, `compare_hubs`. Final answer follows a Pydantic schema (answer, ranking, reasoning, assumptions, confidence). Small command-line chat for manual testing.
 5. **API:** `POST /chat` (with `session_id`), `GET /hubs`, `GET /scores`.
 6. **Chat UI:** a single HTML page that calls `/chat`.
-7. **Eval set:** about 10 questions with expected checks, and a runner script.
+7. **Eval set:** 24 questions (assignment, rankings, single numbers, follow-ups, traps) with expected checks, and a runner script.
 8. **Wrap-up:** finish README.md and DESIGN.md, then DESCRIPTION.md.
    Optional, only if time is left, in this order:
    - OpenFEMA `get_disaster_history` tool (context only)

@@ -36,3 +36,7 @@ class FinalAnswer(BaseModel):
         description="Assumptions and scope limits that affect this answer."
     )
     confidence: Literal["low", "medium", "high"]
+    complete: bool = Field(
+        description="true if this answers the question with data already fetched. "
+                    "false if you still need to call a tool to answer it."
+    )

@@ -26,7 +26,7 @@ class FakeAgent:
             raise anthropic.APIConnectionError(request=httpx.Request("POST", "https://x"))
         self.questions.append(message)
         return FinalAnswer(answer=f"answer {len(self.questions)}", ranking=[],
-                           reasoning=[], assumptions=[], confidence="high")
+                           reasoning=[], assumptions=[], confidence="high", complete=True)
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +72,7 @@ def test_agent_error_is_502_and_claude_outage_is_503():
 def test_hubs_filters_by_region():
     response = http.get("/hubs", params={"region": "West"})
     assert response.status_code == 200
-    assert {h["region"] for h in response.json()} == {"West"}
+    assert {h["region"] for h in response.json()["hubs"]} == {"West"}
     assert http.get("/hubs", params={"region": "Mars"}).status_code == 422
 
 
