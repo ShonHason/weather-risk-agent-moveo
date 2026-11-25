@@ -5,7 +5,10 @@ Work in progress. Filled in as the steps are built. See PLAN.md for the agreed d
 ## System architecture
 
 ```
- user question
+ chat UI / curl
+      |  HTTP: POST /chat, GET /hubs, GET /scores
+      v
+ FastAPI (app/api.py) -- one Agent per session_id, in memory
       |
       v
  Agent (app/agent.py) ---- conversation + tools + answer schema ----> Claude API
@@ -24,7 +27,13 @@ Work in progress. Filled in as the steps are built. See PLAN.md for the agreed d
 
 - **Claude decides, code computes.** Claude picks which tools to call and
   writes the explanation; every score, metric and ranking comes from our
-  deterministic Python code.
+  deterministic Python code. The system prompt forbids Claude from
+  calculating any number itself (no averages, differences or ratios): it may
+  only quote numbers the tools returned. So the tools return the derived
+  numbers a question needs, e.g. `compare_hubs` returns each hub's average
+  over the chosen categories and the highest hub per category. Why: an LLM's
+  arithmetic is not reliably correct, and a number we didn't compute can't
+  be traced or tested.
 - **Agent loop** (hand-written, no framework): send the conversation, run the
   tools Claude asks for, send the results back, repeat until Claude returns
   its final answer. Capped at 8 tool rounds.
@@ -39,6 +48,16 @@ Work in progress. Filled in as the steps are built. See PLAN.md for the agreed d
 - **Model.** `claude-opus-5-5`, effort `medium` (enough for 1-3 tool calls and
   a short explanation). Server-side refusal fallback is on: if a safety check
   declines a request, the API retries it on a fallback model.
+- **API** (`app/api.py`, FastAPI): `POST /chat` takes `{message, session_id?}`
+  and returns `{session_id, answer}`; without a `session_id` a new
+  conversation starts. `GET /hubs` and `GET /scores` return the hubs and the
+  deterministic ranking directly, with no LLM involved, so the numbers can be
+  checked independently of the agent. Errors: invalid input -> 422, agent
+  produced no valid answer or Claude rejected the request -> 502, Claude
+  API unreachable, rate-limited or down (worth retrying) -> 503.
+- **Ranking entries name their category** (`overall`, `winter`, ...), so a
+  comparison across hazards (e.g. Miami vs Houston on hurricane and flood)
+  is unambiguous.
 - **Tools return breakdowns, not just scores**, so Claude can explain *why*
   (e.g. "Detroit's ice storms are more frequent than in 98% of counties").
 
@@ -57,6 +76,7 @@ app/            application code
   tools.py      the 4 tools Claude can call, and their definitions
   schemas.py    FinalAnswer: the JSON schema of the agent's answer
   agent.py      the Claude tool-use loop and system prompt
+  api.py        FastAPI app: /chat, /hubs, /scores
   env.py        loads .env (API key)
 data/
   hubs.json     the list of hubs (one line per hub)
@@ -126,7 +146,9 @@ history. Postgres would be overkill for one process and a few MB of data.
 - Weather is taken at the hub's coordinates (Open-Meteo grid, ~10 km).
 
 ## Limitations
-- Conversation history lives in memory: it is lost when the process stops.
+- Conversation history lives in memory: it is lost when the server
+  restarts, sessions never expire, and it works for one server process only.
+  Two requests in the same session at the same moment are not guarded.
 - The agent answers only from our hubs and data; it cannot fetch forecasts
   or other sources.
 - The observed-weather scales (e.g. 40 snow days = 100) are judgment calls.

@@ -1,4 +1,9 @@
 anthropic
 certifi
+fastapi
 pydantic
+uvicorn
+
+# tests only
+httpx
 pytest

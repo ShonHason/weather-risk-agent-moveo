@@ -20,8 +20,10 @@
   - Severe storm: tornado, strong wind, hail
   - Heat: heat wave
 - **Storage:** SQLite (API cache and score history).
-- **API:** FastAPI. **UI:** a single HTML page served by FastAPI.
+- **API:** FastAPI, run with uvicorn. Server creates a `session_id` when none is sent. **UI:** a single HTML page served by FastAPI.
 - **Chat memory:** in memory, keyed by `session_id`.
+- **Numbers come only from code.** Claude may only use numbers returned by tools, never calculate new ones (system prompt rule). Tools return the derived numbers analysts need (e.g. `compare_hubs` returns averages and the highest hub per category).
+- **Tests:** pytest; `httpx` approved as a test-only dependency for API tests.
 - **Eval:** deterministic checks (tool used, ranking order, numbers within tolerance).
 
 ## Assumptions

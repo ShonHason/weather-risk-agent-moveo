@@ -26,7 +26,8 @@
 - One commit per approved step, made by `/end-step`. Never commit `.env` or secrets.
 
 ## Testing
-- One test framework: the language's standard one (e.g. `pytest`). No other test dependencies.
+- One test framework: the language's standard one (e.g. `pytest`). No other test dependencies,
+  except `httpx` (approved) for API tests with FastAPI's `TestClient`.
 - Unit-test the core logic with small fake inputs.
 - Mock external APIs and LLM calls in tests, so they are fast, free and deterministic.
 - Keep one manual smoke-check command that calls the real API. It is not part of the test suite.

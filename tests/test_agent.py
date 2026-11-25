@@ -11,7 +11,7 @@ from app import agent, tools
 FINAL = {
     "answer": "Minneapolis is most exposed.",
     "ranking": [{"hub_id": "minneapolis", "hub_name": "Minneapolis Hub",
-                 "score": 80.0, "note": "frequent winter weather"}],
+                 "category": "winter", "score": 80.0, "note": "frequent winter weather"}],
     "reasoning": ["Ranked by winter score."],
     "assumptions": ["Exposure = 5-year climate."],
     "confidence": "high",

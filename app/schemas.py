@@ -14,6 +14,9 @@ class RankedHub(BaseModel):
 
     hub_id: str
     hub_name: str
+    category: Literal["overall", "winter", "hurricane", "flood", "severe_storm", "heat"] = Field(
+        description="What the score measures: the overall score or one category."
+    )
     score: float = Field(description="The score this hub was ranked by (0-100).")
     note: str = Field(description="One short line: what drives this hub's score.")
 

@@ -16,7 +16,7 @@ from app.env import load_env
 def print_answer(answer):
     print(f"\n{answer.answer}\n")
     for i, hub in enumerate(answer.ranking, start=1):
-        print(f"  {i}. {hub.hub_name:<20} {hub.score:>5}  {hub.note}")
+        print(f"  {i}. {hub.hub_name:<20} {hub.category:<13} {hub.score:>5}  {hub.note}")
     if answer.ranking:
         print()
     print("Reasoning:")

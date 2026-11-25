@@ -65,6 +65,16 @@ def test_compare_hubs_shows_only_requested_categories_with_nri_detail():
     assert set(result["hubs"][0]["categories"]) == {"hurricane", "flood"}
 
 
+def test_compare_hubs_returns_average_and_highest_hub():
+    # Fake scores: winter = the hub's score (miami 90, chicago 60), others 10.
+    result = tools.compare_hubs(["Miami", "Chicago"], ["winter", "heat"])
+    miami, chicago = result["hubs"]
+    assert miami["average_of_chosen_categories"] == 50.0      # (90 + 10) / 2
+    assert chicago["average_of_chosen_categories"] == 35.0    # (60 + 10) / 2
+    assert result["highest_hub"]["winter"] == "miami"
+    assert result["highest_hub"]["average_of_chosen_categories"] == "miami"
+
+
 def test_run_tool_returns_json():
     output, is_error = tools.run_tool("list_hubs", {"region": "West"})
     assert not is_error

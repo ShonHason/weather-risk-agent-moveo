@@ -51,19 +51,34 @@ def rank_hubs(category=None, region=None, top_n=None):
 
 
 def compare_hubs(hubs, categories=None):
-    """Side-by-side breakdown for two or more hubs, for chosen categories."""
+    """Side-by-side breakdown for two or more hubs, for chosen categories.
+
+    Also returns the numbers an analyst usually wants from a comparison, so
+    Claude never has to calculate them: each hub's average over the chosen
+    categories, and which hub scores highest in each category.
+    """
     categories = categories or CATEGORIES
     comparison = []
     for name in hubs:
         scored = scoring.score_hub(find_hub(name))
+        scores = [scored["categories"][c]["score"] for c in categories]
         comparison.append({
             "hub_id": scored["hub_id"],
             "name": scored["name"],
             "region": scored["region"],
             "overall": scored["overall"],
+            "average_of_chosen_categories": round(sum(scores) / len(scores), 1),
             "categories": {c: _category_detail(scored, c) for c in categories},
         })
-    return {"hubs": comparison}
+
+    highest = {
+        c: max(comparison, key=lambda hub: hub["categories"][c]["score"])["hub_id"]
+        for c in categories
+    }
+    highest["average_of_chosen_categories"] = max(
+        comparison, key=lambda hub: hub["average_of_chosen_categories"])["hub_id"]
+
+    return {"categories": categories, "hubs": comparison, "highest_hub": highest}
 
 
 # --- helpers ---------------------------------------------------------------
@@ -153,7 +168,8 @@ TOOL_DEFINITIONS = [
         "name": "compare_hubs",
         "description": (
             "Compare two or more hubs side by side: category scores with the NRI "
-            "hazard frequencies and observed weather behind them."
+            "hazard frequencies and observed weather behind them, each hub's "
+            "average over the chosen categories, and the highest hub per category."
         ),
         "input_schema": {
             "type": "object",

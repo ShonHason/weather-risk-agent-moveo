@@ -31,6 +31,19 @@ python scripts/chat.py --json    # also prints the raw structured answer
 Try: "Which hubs in the Midwest are most exposed to winter disruption?",
 then a follow-up like "And in the South?".
 
+## Run the API
+
+```bash
+uvicorn app.api:app --reload     # interactive docs: http://127.0.0.1:8000/docs
+```
+
+```bash
+curl "localhost:8000/scores?category=winter&region=Midwest"
+curl -X POST localhost:8000/chat -H 'content-type: application/json' \
+     -d '{"message": "Why is the Dallas hub risk high?"}'
+# follow-up: send the session_id from the reply
+```
+
 ## See the risk scores
 
 ```bash
