@@ -2,6 +2,9 @@
 
 ## Decisions
 - **LLM:** Claude (official Anthropic SDK), raw tool-use loop, no agent framework.
+  - Model `claude-opus-5-5`, effort `medium`, server-side refusal fallback on.
+  - Final answer: JSON schema sent as the API's output format, then validated with Pydantic.
+  - `.env` is read by a small helper (`app/env.py`), no `python-dotenv`.
 - **Structured output:** Pydantic models → JSON schema, validated in code.
 - **Data:**
   - FEMA National Risk Index (NRI): county-level hazard data. Main input to the risk score: each hazard's annualized frequency (`AFREQ`) as a national percentile across all US counties. FEMA's `RISKS` score is context only (it is biased toward large counties).

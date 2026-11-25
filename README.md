@@ -21,6 +21,16 @@ python scripts/test.py           # unit tests (mocked, fast, free)
 python scripts/test.py smoke     # one real API call
 ```
 
+## Chat with the agent
+
+```bash
+python scripts/chat.py           # needs ANTHROPIC_API_KEY in .env
+python scripts/chat.py --json    # also prints the raw structured answer
+```
+
+Try: "Which hubs in the Midwest are most exposed to winter disruption?",
+then a follow-up like "And in the South?".
+
 ## See the risk scores
 
 ```bash

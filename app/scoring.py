@@ -94,7 +94,9 @@ def score_hub(hub, db_path=cache.DB_PATH):
         "region": hub["region"],
         **risk_score(nri_risk, hub_metrics),
         "metrics": hub_metrics,
+        "nri_county": f"{nri_risk['county']}, {nri_risk['state']}",
         "nri_version": nri_risk["nri_version"],
+        "nri_hazards": nri_risk["hazards"],
     }
 
 

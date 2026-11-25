@@ -3,7 +3,44 @@
 Work in progress. Filled in as the steps are built. See PLAN.md for the agreed decisions.
 
 ## System architecture
-TBD
+
+```
+ user question
+      |
+      v
+ Agent (app/agent.py) ---- conversation + tools + answer schema ----> Claude API
+      ^                 <--- tool calls / final JSON answer ---------
+      |
+      | runs tool calls
+      v
+ Tools (app/tools.py): list_hubs, get_hub_metrics, rank_hubs, compare_hubs
+      |
+      v
+ Scoring (scoring.py, metrics.py) --> clients (nri.py, weather.py)
+                                          |
+                                          v
+                              SQLite cache <-- FEMA NRI / Open-Meteo APIs
+```
+
+- **Claude decides, code computes.** Claude picks which tools to call and
+  writes the explanation; every score, metric and ranking comes from our
+  deterministic Python code.
+- **Agent loop** (hand-written, no framework): send the conversation, run the
+  tools Claude asks for, send the results back, repeat until Claude returns
+  its final answer. Capped at 8 tool rounds.
+- **Structured output.** The final answer must follow the `FinalAnswer`
+  JSON schema (`app/schemas.py`: answer, ranking, reasoning, assumptions,
+  confidence). The schema is sent to the API as the required output format,
+  and the reply is validated again with Pydantic. An invalid answer raises an
+  error instead of reaching the user.
+- **Conversation memory.** One `Agent` object keeps one conversation's full
+  history, so follow-up questions work. A failed turn is removed from the
+  history.
+- **Model.** `claude-opus-5-5`, effort `medium` (enough for 1-3 tool calls and
+  a short explanation). Server-side refusal fallback is on: if a safety check
+  declines a request, the API retries it on a fallback model.
+- **Tools return breakdowns, not just scores**, so Claude can explain *why*
+  (e.g. "Detroit's ice storms are more frequent than in 98% of counties").
 
 ## Repository structure
 
@@ -17,11 +54,16 @@ app/            application code
   metrics.py    daily weather -> metrics (snow days, hot days, ...) per hub
   scoring.py    the deterministic risk score, breakdown and ranking
   scoring_config.py  all weights, scales and thresholds of the score
+  tools.py      the 4 tools Claude can call, and their definitions
+  schemas.py    FinalAnswer: the JSON schema of the agent's answer
+  agent.py      the Claude tool-use loop and system prompt
+  env.py        loads .env (API key)
 data/
   hubs.json     the list of hubs (one line per hub)
   cache.db      SQLite cache, created on first use (not in git)
 scripts/
-  test.py     runs unit tests or the smoke check
+  test.py       runs unit tests or the smoke check
+  chat.py       command-line chat with the agent (manual testing)
 tests/        unit tests
 ```
 
@@ -84,6 +126,9 @@ history. Postgres would be overkill for one process and a few MB of data.
 - Weather is taken at the hub's coordinates (Open-Meteo grid, ~10 km).
 
 ## Limitations
+- Conversation history lives in memory: it is lost when the process stops.
+- The agent answers only from our hubs and data; it cannot fetch forecasts
+  or other sources.
 - The observed-weather scales (e.g. 40 snow days = 100) are judgment calls.
   They are one line each in `app/scoring_config.py`.
 - Heavy rain is only a partial proxy for flooding (it misses storm surge and
