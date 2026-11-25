@@ -101,8 +101,15 @@ call `alerts.py`.)
   plain HTML, CSS and JavaScript, so there is no build step and no frontend
   framework to explain. It calls `POST /chat` and keeps the `session_id` in
   memory for follow-ups ("New conversation" reloads the page). Each answer
-  shows a confidence badge, the ranking as a table, and the reasoning and
-  assumptions folded under "How I got this". Model output is inserted as
+  shows a neutral confidence label, the ranking as a table, and the reasoning
+  and assumptions folded under "How I got this". Each score has a small bar
+  coloured by risk level (same bands as `RISK_LEVELS`: Severe 80+, High 60+,
+  Moderate 30+, Low), with a legend under the table, so the ranking can be
+  scanned at a glance. Colour is used only for risk, never for confidence, so
+  "high confidence" is not mistaken for a risk level. When every row has the
+  same category, the column is dropped and the category is shown once. The
+  empty page shows a short intro and the example questions as a 2×2 grid.
+  Model output is inserted as
   plain text (`textContent`), never as HTML, so an answer cannot inject
   markup or scripts into the page.
 - **Short-term risk score and alert** (`app/forecast.py`, `app/alerts.py`).
@@ -385,7 +392,7 @@ Out of scope, on purpose:
 - Every answer carries a `confidence` (`high` / `medium` / `low`): high when
   the tools answer the question directly, medium when the question had to be
   interpreted, low when the data only partly covers it. The chat page shows
-  it as a badge.
+  it as a neutral label ("Confidence: high").
 - Every answer lists its `assumptions` (e.g. "last year = 2025", "Denver =
   the hub's coordinates"), so the analyst sees what the number depends on.
 - The score itself is not a probability: it ranks exposure on a 0-100 scale.

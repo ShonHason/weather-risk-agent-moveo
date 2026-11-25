@@ -56,6 +56,7 @@
 11. **Forecast vs normal:** relative score per hub and month from the cached history, combined with the absolute score (max).
 12. **Deploy:** Render free web service (`render.yaml`), pinned dependencies, docs. No scheduled scan (see Decisions).
 13. **Team channel link:** optional `ALERT_CHANNEL_URL`; each alert's text ends with a Slack link "Discuss in the team channel" (chosen over a link to the web chat). The chat page gets a round Slack-logo button (hover: "Team's Slack") to the same channel, via `GET /team-channel`.
+14. **Chat page design:** neutral confidence label (colour only for risk), score bars coloured by `RISK_LEVELS` with a legend, category column dropped when all rows share one, aligned message edges, centred empty state with the examples in a 2×2 grid.
 
 ## Reminder
 - Export the full session with the AI agent at the end (mandatory deliverable).

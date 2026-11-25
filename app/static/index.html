@@ -12,8 +12,9 @@
   <style>
     :root {
       --bg: #f6f7f9; --card: #ffffff; --text: #1d2430; --muted: #5d6675;
-      --line: #e2e5ea; --accent: #1f5fbf; --user: #e8f0fc;
-      --high: #1e7a46; --medium: #a36a00; --low: #b3261e;
+      --line: #e2e5ea; --accent: #1f5fbf; --user: #e8f0fc; --error: #b3261e;
+      /* Risk level colours, used only for scores (never for confidence). */
+      --severe: #c62828; --high: #e8710a; --moderate: #d4a20b; --low: #2e8b57;
     }
     * { box-sizing: border-box; }
     body {
@@ -54,27 +55,54 @@
     #thread { flex: 1; overflow-y: auto; padding: 20px; }
     .inner { max-width: 820px; margin: 0 auto; }
 
-    .examples { color: var(--muted); }
-    .examples button { display: block; margin: 8px 0; text-align: left; width: 100%; }
+    /* Empty state: the examples sit in the middle of the page. */
+    #thread.empty { display: flex; align-items: center; }
+    #thread.empty .inner { width: 100%; }
+    .examples h2 { font-size: 22px; margin: 0 0 6px; }
+    .examples p { color: var(--muted); margin: 0 0 20px; }
+    .example-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .example-grid button {
+      text-align: left; padding: 14px 16px; border-radius: 12px; line-height: 1.4;
+    }
+    .example-grid button:hover { border-color: var(--accent); background: var(--user); }
+    @media (max-width: 600px) { .example-grid { grid-template-columns: 1fr; } }
 
+    /* User and agent messages share the same right edge. */
     .msg { margin: 14px 0; padding: 12px 16px; border-radius: 12px; }
     .user { background: var(--user); margin-left: 15%; white-space: pre-wrap; }
-    .agent { background: var(--card); border: 1px solid var(--line); margin-right: 5%; }
-    .error { background: #fdecea; color: var(--low); }
+    .agent { background: var(--card); border: 1px solid var(--line); }
+    .error { background: #fdecea; color: var(--error); }
     .thinking { color: var(--muted); font-style: italic; }
 
-    .badge {
-      display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px;
-      border-radius: 10px; color: #fff; margin-bottom: 6px;
+    /* Confidence is a neutral label, so it is not confused with a risk level. */
+    .confidence {
+      display: inline-block; font-size: 12px; color: var(--muted); margin-bottom: 6px;
+      border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px;
     }
-    .badge.high { background: var(--high); }
-    .badge.medium { background: var(--medium); }
-    .badge.low { background: var(--low); }
+    .confidence b { color: var(--text); font-weight: 600; }
 
+    .table-category { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
     table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; }
-    td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    td.nowrap { white-space: nowrap; }
+
+    /* Score cell: the number next to a small bar filled to the score (0-100). */
+    .score { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .score-num { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+    .bar { width: 70px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+    .bar span { display: block; height: 100%; border-radius: 3px; }
+    .bar .severe { background: var(--severe); }
+    .bar .high { background: var(--high); }
+    .bar .moderate { background: var(--moderate); }
+    .bar .low { background: var(--low); }
+
+    /* Legend under the table: what each bar colour means. */
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+    .legend span::before {
+      content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      margin-right: 5px; background: var(--dot);
+    }
 
     details { margin-top: 8px; color: var(--muted); font-size: 14px; }
     summary { cursor: pointer; }
@@ -115,14 +143,18 @@
     </div>
   </header>
 
-  <main id="thread">
+  <main id="thread" class="empty">
     <div class="inner" id="messages">
       <div class="examples" id="examples">
-        <p>Ask about the hubs, or try one of these:</p>
-        <button type="button">Which hubs in the Midwest are most exposed to winter disruption?</button>
-        <button type="button">Compare Miami and Houston in terms of hurricane and flood exposure.</button>
-        <button type="button">What percentage of days in Denver last year had snowfall?</button>
-        <button type="button">Why is the Dallas hub's weather disruption risk high?</button>
+        <h2>Which hubs are most at risk?</h2>
+        <p>Ask about winter, hurricane, flood, severe storm or heat exposure for any hub or region.
+          Answers use FEMA's National Risk Index and observed weather. Try one of these:</p>
+        <div class="example-grid">
+          <button type="button">Which hubs in the Midwest are most exposed to winter disruption?</button>
+          <button type="button">Compare Miami and Houston in terms of hurricane and flood exposure.</button>
+          <button type="button">What percentage of days in Denver last year had snowfall?</button>
+          <button type="button">Why is the Dallas hub's weather disruption risk high?</button>
+        </div>
       </div>
     </div>
   </main>
@@ -166,28 +198,80 @@
       return box;
     }
 
+    // A score in words. Same bands as RISK_LEVELS in app/scoring_config.py.
+    function riskLevel(score) {
+      if (score >= 80) return "severe";
+      if (score >= 60) return "high";
+      if (score >= 30) return "moderate";
+      return "low";
+    }
+
+    // The score as a number plus a small bar coloured by its risk level.
+    function scoreCell(score) {
+      const level = riskLevel(score);
+      const td = el("td");
+      td.title = level + " risk";
+      const wrap = el("div", undefined, "score");
+      wrap.appendChild(el("span", score.toFixed(1), "score-num"));
+      const bar = el("div", undefined, "bar");
+      const fill = el("span", undefined, level);
+      fill.style.width = Math.min(Math.max(score, 0), 100) + "%";
+      bar.appendChild(fill);
+      wrap.appendChild(bar);
+      td.appendChild(wrap);
+      return td;
+    }
+
+    function rankingTable(ranking) {
+      // When every row has the same category, say it once instead of in a column.
+      const categories = new Set(ranking.map(hub => hub.category));
+      const oneCategory = categories.size === 1;
+      const name = category => category.replace("_", " ");
+
+      const wrap = el("div");
+      if (oneCategory) {
+        wrap.appendChild(el("p", "Category: " + name(ranking[0].category), "table-category"));
+      }
+      const table = el("table");
+      const head = el("tr");
+      const columns = oneCategory ? ["#", "Hub", "Score", "Why"] : ["#", "Hub", "Category", "Score", "Why"];
+      columns.forEach(h => head.appendChild(el("th", h)));
+      table.appendChild(head);
+      ranking.forEach((hub, i) => {
+        const row = el("tr");
+        row.appendChild(el("td", String(i + 1)));
+        row.appendChild(el("td", hub.hub_name, "nowrap"));
+        if (!oneCategory) row.appendChild(el("td", name(hub.category), "nowrap"));
+        row.appendChild(scoreCell(hub.score));
+        row.appendChild(el("td", hub.note));
+        table.appendChild(row);
+      });
+      wrap.appendChild(table);
+      wrap.appendChild(legend());
+      return wrap;
+    }
+
+    // One line explaining the bar colours (same bands as riskLevel above).
+    function legend() {
+      const box = el("div", undefined, "legend");
+      [["Severe 80+", "--severe"], ["High 60–79", "--high"],
+       ["Moderate 30–59", "--moderate"], ["Low 0–29", "--low"]].forEach(([label, colour]) => {
+        const item = el("span", label);
+        item.style.setProperty("--dot", "var(" + colour + ")");
+        box.appendChild(item);
+      });
+      return box;
+    }
+
     // Show one structured answer (the FinalAnswer schema).
     function renderAnswer(answer) {
       const box = el("div", undefined, "msg agent");
-      box.appendChild(el("span", answer.confidence + " confidence", "badge " + answer.confidence));
+      const confidence = el("span", "Confidence: ", "confidence");
+      confidence.appendChild(el("b", answer.confidence));
+      box.appendChild(confidence);
       box.appendChild(el("div", answer.answer));
 
-      if (answer.ranking.length > 0) {
-        const table = el("table");
-        const head = el("tr");
-        ["#", "Hub", "Category", "Score", "Why"].forEach(h => head.appendChild(el("th", h)));
-        table.appendChild(head);
-        answer.ranking.forEach((hub, i) => {
-          const row = el("tr");
-          row.appendChild(el("td", String(i + 1)));
-          row.appendChild(el("td", hub.hub_name));
-          row.appendChild(el("td", hub.category.replace("_", " ")));
-          row.appendChild(el("td", hub.score.toFixed(1), "num"));
-          row.appendChild(el("td", hub.note));
-          table.appendChild(row);
-        });
-        box.appendChild(table);
-      }
+      if (answer.ranking.length > 0) box.appendChild(rankingTable(answer.ranking));
 
       const details = el("details");
       details.appendChild(el("summary", "How I got this"));
@@ -212,6 +296,7 @@
       text = text.trim();
       if (!text) return;
       examples.remove();
+      thread.classList.remove("empty");
       addMessage(el("div", text, "msg user"));
       const waiting = addMessage(el("div", "Thinking… (checking the hub data)", "msg thinking"));
       question.value = "";
