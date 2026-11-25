@@ -51,14 +51,35 @@ WINDY_DAY_MIN_KMH = 60.0     # gusts strong enough to disrupt trucks
 # Separate from the long-term score above. For each hazard: the worst
 # forecast day, on a linear scale from "no impact" (0) to "severe" (100),
 # capped. A hub's short-term score is its worst hazard (the max).
+#
+# Each day also gets a RELATIVE score: how unusual the value is for this
+# hub in this calendar month (-8 °C is extreme in Dallas, normal in
+# Minneapolis). It counts only on a DISRUPTIVE day, by the same daily
+# definitions as the long-term metrics above ("disruptive_from": a snow
+# day, heavy rain day, windy day, hot day, freezing night). A hazard's day
+# score is the higher of the absolute and the relative score.
+# An unusual day that is not disruptive only becomes an info note.
 FORECAST_DAYS = 7
 FORECAST_SCALES = {
-    "snow": {"variable": "snowfall_cm", "zero_at": 0, "full_at": 15, "unit": "cm"},
-    "heavy_rain": {"variable": "precipitation_mm", "zero_at": 10, "full_at": 50, "unit": "mm"},
-    "wind": {"variable": "wind_gust_max_kmh", "zero_at": 40, "full_at": 100, "unit": "km/h"},
-    "heat": {"variable": "temp_max_c", "zero_at": 30, "full_at": 42, "unit": "°C"},
-    "cold": {"variable": "temp_min_c", "zero_at": -10, "full_at": -30, "unit": "°C"},
+    "snow": {"variable": "snowfall_cm", "zero_at": 0, "full_at": 15,
+             "disruptive_from": SNOW_DAY_MIN_CM, "unit": "cm"},
+    "heavy_rain": {"variable": "precipitation_mm", "zero_at": 10, "full_at": 50,
+                   "disruptive_from": HEAVY_RAIN_MIN_MM, "unit": "mm"},
+    "wind": {"variable": "wind_gust_max_kmh", "zero_at": 40, "full_at": 100,
+             "disruptive_from": WINDY_DAY_MIN_KMH, "unit": "km/h"},
+    "heat": {"variable": "temp_max_c", "zero_at": 30, "full_at": 42,
+             "disruptive_from": HOT_DAY_MIN_C, "unit": "°C"},
+    "cold": {"variable": "temp_min_c", "zero_at": -10, "full_at": -30,
+             "disruptive_from": FREEZING_DAY_MAX_C, "unit": "°C"},
 }
+
+# Relative score: the value's percentile among the hub's past days of the
+# same calendar month (share of days that were less severe). 0 up to this
+# percentile, rising linearly to 100 beyond the most extreme past day.
+# 95, not lower: with ~150 past days per month and 35 hazard-days per
+# forecast, a lower start makes almost every hub score high.
+# The same percentile marks an "unusual" day for the info notes.
+RELATIVE_FROM_PERCENTILE = 95
 
 # Alert when a hub's short-term score is at least ALERT_MIN_CHANGE points
 # away from any of its scores in the last ALERT_WINDOW_DAYS days (only

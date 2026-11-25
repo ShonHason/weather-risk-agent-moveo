@@ -121,6 +121,8 @@ def find_changes(past_by_hub, current_results, min_change=None, min_level=None):
             "since": before["checked_at"],
             "now": now_driver,
             "before": before_driver,
+            # Info only: unusual-but-not-disruptive days (never cause an alert).
+            "notes": [note["note"] for note in result.get("notes", [])],
             "message": (
                 f"{result['hub_name']}: short-term risk {direction} "
                 f"{before['score']} -> {result['score']} since {before['checked_at']} "

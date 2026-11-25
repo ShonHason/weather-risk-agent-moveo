@@ -115,7 +115,10 @@ python -m app.forecast           # short-term (7-day forecast) score per hub, li
 
 ## Risk-change alerts
 
-A second, short-term score per hub comes from the 7-day forecast. A check
+A second, short-term score per hub comes from the 7-day forecast. It
+counts both how severe the weather is (a fixed scale) and how unusual it is
+for that hub in that month (-8 °C matters in Dallas, not in Minneapolis);
+unusual days that aren't disruptive are listed as info notes. A check
 recomputes it for every hub and raises an alert when a hub's score is 10
 points or more away from any of its scores in the last 3 days (so a gradual
 rise is caught too), and the old or new score is at least 40. After an

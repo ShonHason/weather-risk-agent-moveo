@@ -62,6 +62,67 @@ def test_forecast_is_never_cached(tmp_path, monkeypatch):
     assert cache.get("https://example.com?a=1", db) is None
 
 
+# --- forecast vs normal for the hub ----------------------------------------
+
+def history_with(variable, values, month="11"):
+    """A fake history: one value per day, all in one calendar month."""
+    days = [f"2025-{month}-{(i % 28) + 1:02d}" for i in range(len(values))]
+    history = {"date": days}
+    for name in ["snowfall_cm", "precipitation_mm", "wind_gust_max_kmh",
+                 "temp_max_c", "temp_min_c"]:
+        history[name] = values if name == variable else [0.0] * len(values)
+    return history
+
+
+def november_daily(**columns):
+    daily = make_daily(**columns)
+    daily["date"] = ["2026-11-26", "2026-11-27"]
+    return daily
+
+
+def test_percentile_counts_less_severe_days():
+    assert forecast.percentile_in_history(5, [1, 2, 5, 8], lower_is_worse=False) == 50.0
+    assert forecast.percentile_in_history(-8, [0, 5, -10, 3], lower_is_worse=True) == 75.0
+    assert forecast.percentile_in_history(5, [], lower_is_worse=False) is None
+
+
+def test_same_frost_counts_in_dallas_not_in_minneapolis():
+    daily = november_daily(temp_min_c=[-8.0, 2.0])
+    dallas = history_with("temp_min_c", [float(t) for t in range(1, 21)])       # mild Novembers
+    minneapolis = history_with("temp_min_c", [float(t) for t in range(-15, 5)])  # cold Novembers
+    in_dallas = forecast.forecast_score(daily, dallas)["hazards"]["cold"]
+    in_minneapolis = forecast.forecast_score(daily, minneapolis)["hazards"]["cold"]
+    assert in_dallas["absolute"] == 0.0 and in_dallas["relative"] == 100.0
+    assert in_dallas["score"] == 100.0
+    assert in_minneapolis["relative"] == 0.0 and in_minneapolis["score"] == 0.0
+
+
+def test_relative_starts_at_95th_percentile():
+    # 30 mm of rain (disruptive), more than 96 of 100 past days
+    past = [0.0] * 96 + [40.0] * 4
+    daily = november_daily(precipitation_mm=[30.0, 0.0])
+    rain = forecast.forecast_score(daily, history_with("precipitation_mm", past))["hazards"]["heavy_rain"]
+    assert rain["percentile"] == 96.0
+    assert rain["relative"] == 20.0                  # (96 - 95) / (100 - 95)
+    assert rain["score"] == 50.0                     # absolute (30 mm on 10-50) is higher
+
+
+def test_unusual_but_not_disruptive_is_only_a_note():
+    # 14 mm of rain where November is dry: unusual, but under 25 mm
+    daily = november_daily(precipitation_mm=[14.0, 0.0])
+    score = forecast.forecast_score(daily, history_with("precipitation_mm", [0.0] * 50))
+    rain = score["hazards"]["heavy_rain"]
+    assert rain["relative"] == 0.0 and rain["score"] == 10.0   # absolute only
+    assert [n["hazard"] for n in score["notes"]] == ["heavy_rain"]
+    assert "rain 14.0 mm on 2026-11-26 is higher than 100.0% of November" in score["notes"][0]["note"]
+
+
+def test_no_history_means_absolute_only_and_no_notes():
+    score = forecast.forecast_score(november_daily(temp_min_c=[-8.0, 0.0]))
+    assert score["hazards"]["cold"]["relative"] == 0.0
+    assert score["notes"] == []
+
+
 # --- comparing scores -------------------------------------------------------
 
 DAY_0 = datetime(2026, 12, 1, 6, 0, tzinfo=timezone.utc)
@@ -104,6 +165,15 @@ def test_find_changes_uses_the_furthest_past_score():
     assert changes[0]["before"]["hazard"] == "wind"      # what drove the old score
     assert changes[0]["now"]["hazard"] == "snow"
     assert "before: wind 50.0 km/h" in changes[0]["message"]
+
+
+def test_alert_carries_notes_but_notes_never_alert():
+    noted = {**result("chicago", 45.0), "notes": [{"note": "Unusual but not disruptive: rain"}]}
+    quiet = {**result("denver", 41.0), "notes": [{"note": "Unusual but not disruptive: wind"}]}
+    changes = alerts.find_changes({"chicago": [past(30, 0)], "denver": [past(40, 0)]},
+                                  [noted, quiet], min_change=10, min_level=40)
+    assert [a["hub_id"] for a in changes] == ["chicago"]
+    assert changes[0]["notes"] == ["Unusual but not disruptive: rain"]
 
 
 def test_find_changes_ignores_moves_between_low_scores():
@@ -252,6 +322,7 @@ def test_check_endpoint_baseline_then_alert(fake_check):
 def test_forecast_tool_returns_score_daily_values_and_scales(monkeypatch):
     monkeypatch.setattr(forecast, "fetch_forecast",
                         lambda lat, lon: make_daily(snowfall_cm=[0.0, 7.5]))
+    monkeypatch.setattr(forecast, "fetch_history", lambda lat, lon: None)
     result = tools.get_forecast_risk("Chicago")
     assert result["hub_id"] == "chicago"
     assert result["score"] == 50.0 and result["hazard"] == "snow"

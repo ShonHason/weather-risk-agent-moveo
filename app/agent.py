@@ -66,7 +66,12 @@ How the risk score works (computed by the tools, 0-100, higher = more exposed):
 Short-term risk (get_forecast_risk), for questions about this week or the
 coming days: a separate 0-100 score from the 7-day forecast (Open-Meteo).
 Each hazard (snow, heavy_rain, wind, heat, cold) is scored on its worst
-forecast day on a linear scale, and the hub's score is its worst hazard.
+forecast day, and the hub's score is its worst hazard. A day's score is the
+higher of an absolute score (fixed scale) and a relative score (how unusual
+the value is for this hub in this calendar month, by its percentile in the
+hub's history); the relative score counts only on a disruptive day. "notes"
+lists unusual days that are not disruptive: mention them as information,
+they are not part of the score.
 Never mix it with the long-term score, and leave "ranking" empty for it.
 Say it is a forecast and can change.
 

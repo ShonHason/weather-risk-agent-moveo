@@ -116,6 +116,29 @@ call `alerts.py`.)
     temperature -10 to -30 °C. The hub's score is its worst hazard (the
     same "one severe hazard is enough" logic as the long-term score). All
     scales are in `FORECAST_SCALES` in `app/scoring_config.py`.
+  - *Relative to normal:* a fixed scale misses that -8 °C can shut
+    Dallas, which rarely sees it, but is an ordinary night in Minneapolis. So each forecast value also gets its **percentile among
+    the hub's own days of the same calendar month** in the cached 2021-2025
+    history (no extra API calls): the share of past days that were less
+    severe. Relative score: 0 up to the 95th percentile, 100 beyond the
+    most extreme past day. A day's score is the **higher** of the absolute
+    and relative scores (a blend would dilute exactly the case we want).
+    - The relative score counts **only on a disruptive day**, by the same
+      daily definitions as the long-term metrics: any snow, rain >= 25 mm,
+      gusts >= 60 km/h, max >= 35 °C, a night below 0 °C. "Unusually mild
+      for Miami" must never score.
+    - Why the 95th percentile and those thresholds: measured on a live
+      forecast, the first version (90th percentile, lower thresholds) put
+      16 of 21 hubs at 40+, since 7 days x 5 hazards give 35 chances to
+      land in the tail of a ~150-day sample. This version: 12 (absolute
+      only: 10); the extra hubs are real signals, e.g. Detroit's forecast
+      32 mm of rain is more than any November day in its history.
+    - An unusual day (>= 95th percentile) that is **not** disruptive
+      becomes an info **note** ("rain 14.4 mm is higher than 98.7% of
+      November days in the hub's history, short of the disruption
+      threshold"). Notes appear in the forecast tool and in alert details,
+      but never raise the score or trigger an alert: disruption is what the
+      score is about.
   - *Check:* `POST /alerts/check` recomputes all hubs and stores every
     score (with its driving hazard) in `score_history`. A hub alerts when
     its new score is at least 10 points (`ALERT_MIN_CHANGE`; smaller moves
@@ -146,8 +169,9 @@ call `alerts.py`.)
   - *No caching:* `fetch_json(..., use_cache=False)` always downloads the
     forecast; the permanent cache would freeze it.
   - *Agent tool:* `get_forecast_risk` lets the agent answer "what's the risk
-    at Chicago this week?". It returns the score, each hazard's worst day,
-    the daily forecast values and the scales. The prompt keeps it apart
+    at Chicago this week?". It returns the score, each hazard's worst day
+    (absolute, relative, percentile), the info notes, the daily forecast
+    values and the scales. The prompt keeps it apart
     from the long-term score and tells Claude to say it can change.
 - **Ranking entries name their category** (`overall`, `winter`, ...), so a
   comparison across hazards (e.g. Miami vs Houston on hurricane and flood)
@@ -358,6 +382,11 @@ Out of scope, on purpose:
   calls, like the long-term ones, and they ignore how a hazard combines with
   others (e.g. snow plus strong wind). Forecast values for days 5-7 are much
   less reliable than for days 1-2.
+- "Normal" comes from only 5 years (~150 days per calendar month), so the
+  far tail is thin: "beyond the 99th percentile" rests on one or two past
+  days. The history (reanalysis) and the forecast come from different
+  weather models, which can shift percentiles a little. Calendar months
+  are a coarse season: late November is compared with early November too.
 - A check calls the forecast API once per hub (21 calls, ~5 s); fine at this
   size, but many hubs would need Open-Meteo's multi-location requests.
 - The cache never expires. That is fine for historical data, but NRI updates
