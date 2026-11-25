@@ -70,4 +70,6 @@ the agent answer "what's the risk at Chicago this week?".
   on their own.
 - Chat memory is kept in the server's memory and lost on restart.
 - Alerts need an external scheduler to call the webhook (e.g. cron).
-- Not yet built: voice and a public URL.
+- Live at https://weather-risk-agent-sz0f.onrender.com (free hosting: it
+  sleeps when idle, and the alert history resets on restart). Not built:
+  voice, and a scheduled weather scan on the hosted app.

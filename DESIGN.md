@@ -195,6 +195,7 @@ call `alerts.py`.)
   (e.g. "Detroit's ice storms are more frequent than in 98% of counties").
 
 ## Deployment
+- **Live:** https://weather-risk-agent-sz0f.onrender.com
 - **Render, free web service**, defined in `render.yaml` (in the repo, so
   the setup can be read and reviewed). It deploys from GitHub on every
   push to `main`.

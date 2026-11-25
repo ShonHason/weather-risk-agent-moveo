@@ -5,6 +5,10 @@ hubs are most exposed to severe weather. It ranks hubs with a deterministic
 risk score built from public data (FEMA National Risk Index + Open-Meteo
 weather history), and Claude explains the results in a chat.
 
+**Live demo:** https://weather-risk-agent-sz0f.onrender.com (free plan:
+the first request after ~15 minutes idle takes ~30-60 s to wake it up).
+API docs: https://weather-risk-agent-sz0f.onrender.com/docs
+
 - How it works and why: [DESIGN.md](DESIGN.md)
 - One-page summary: [DESCRIPTION.md](DESCRIPTION.md)
 
