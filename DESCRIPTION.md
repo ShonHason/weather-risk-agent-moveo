@@ -29,8 +29,8 @@ the agent answer "what's the risk at Chicago this week?".
    our tools (list, rank, compare, get metrics, forecast), and writes the answer. It
    never computes a number: every score, gap, average and ratio it quotes
    comes from the tools.
-4. **Risk-change alerts.** A scheduler calls a protected webhook
-   (`POST /alerts/check`). It scores every hub's coming week (snow, heavy
+4. **Risk-change alerts.** A protected webhook (`POST /alerts/check`),
+   called by any scheduler or by hand, scores every hub's coming week (snow, heavy
    rain, wind, heat, extreme cold), both on a fixed scale and against what
    is normal for that hub in that month (-8 °C matters in Dallas, not in
    Minneapolis), compares with its scores of the last 3
@@ -52,13 +52,15 @@ the agent answer "what's the risk at Chicago this week?".
   largest model here, about 46 times cheaper and twice as fast.
 
 ## How we know it works
-- 105 unit tests for the scoring, alerts, tools, API and agent loop
+- 113 unit tests for the scoring, alerts, tools, API and agent loop
   (external services mocked).
 - An evaluation set of 25 questions, including traps (an unknown hub, a
   year without data, invitations to calculate) and "this week" forecast
   questions. Answers are checked by code, not by another model: correct
   hubs and scores, no invented numbers. All 25 pass; before the forecast
-  tool, the 24 earlier ones passed 72 of 72 runs (each question 3 times).
+  tool, the 24 earlier ones passed 72 of 72 runs on Haiku (each question
+  3 times), and Opus passed the ratio and gap cases 12 of 12; Haiku was
+  chosen at about 1/46 of the cost.
 
 ## Limits and scope
 - It measures exposure to weather, not financial impact: we have no data on

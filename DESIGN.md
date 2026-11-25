@@ -76,19 +76,33 @@ call `alerts.py`.)
   history, so follow-up questions work. A failed turn is removed from the
   history.
 - **Model: Claude Haiku 5.5 by default, Opus 5.5 as an option**
-  (`AGENT_MODEL`), effort `medium` (`AGENT_EFFORT`). Chosen by running the
-  eval on both, every case 3 times (72 runs each):
+  (`AGENT_MODEL`), effort `medium` (`AGENT_EFFORT`). Chosen by eval. The
+  last comparison, on the final agent code (after the completeness flag,
+  count ratios and the data period in the prompt), every case 3 times:
 
-  | | Opus 5.5 | Haiku 5.5 |
-  |---|---|---|
-  | Runs passed | 72/72 | 70/72, then 72/72 after the fixes |
-  | Cost per question | ~$0.064 | ~$0.001 (~46x cheaper) |
-  | Median / slowest response | 10.5 s / 27 s | 6 s / 13 s |
+  | | Opus 5.5, full run | Opus 5.5, re-run | Haiku 5.5 |
+  |---|---|---|---|
+  | Agent code | before the last fixes | final | final |
+  | Cases run | all 24 of the time, 3 times each | 4 cases, 3 times each: top 5 overall, 3-hub winter comparison, difference trap, ratio trap | all 24 of the time, 3 times each |
+  | Runs passed | 72/72 | 12/12 | 72/72 |
+  | Checks passed | 441/441 | 72/72 | 444/444 |
+  | Cost | $4.63 (~$0.064 per run) | $0.61 (~$0.05 per run) | $0.11 (~$0.0015 per run) |
+  | Median response | 10.5 s | 8.5 s | 6 s |
+  | Incomplete answers retried | n/a (no retry yet) | 0 | 4, all follow-ups, all answered on retry |
+
+  The full Opus run is the same size as Haiku's (72 runs), on the code
+  before the last fixes (completeness flag, count ratios, data period in
+  the prompt). Opus was then re-run only on the cases those fixes were
+  about, where both models had failed before. Both now pass everything
+  they were given. Same-size runs: Haiku costs ~43x less per run (~46x
+  when both ran the same code) and answers ~2x faster. Details in
+  `docs/ai-session/session-2.md`.
 
   All scoring is deterministic Python, so the model only picks tools and
   explains; Haiku does that about as reliably as Opus at a fraction of the
-  cost and twice the speed. Effort `high` on Haiku was also measured: +1 s
-  median, +20% cost, no quality gain, so `medium` stays. Server-side refusal
+  cost and twice the speed. Effort `high` on Haiku was also measured on
+  the full eval: 71/72 runs (medium: 72/72), 7 s median (medium: 6 s),
+  $0.12 per 72 runs (medium: $0.10). No quality gain, so `medium` stays. Server-side refusal
   fallback is sent only to models that support it (Opus, not Haiku).
 - **API** (`app/api.py`, FastAPI): `POST /chat` takes `{message, session_id?}`
   and returns `{session_id, answer}`; without a `session_id` a new
@@ -351,6 +365,8 @@ LLM judge, so a failure always has a concrete reason.
 - **Cost and time** are printed per run (`--repeat 3` on Haiku: ~$0.10, ~2
   minutes), so a model or effort change can be judged on quality, cost and
   speed together.
+- **Model choice:** the Opus vs Haiku comparison (every case 3 times on
+  each) is under "Model" in the architecture section.
 - **Latest results:** Haiku (default), every case 3 times: 72/72 runs,
   444/444 checks, $0.11, 6 s median per question; 4 incomplete answers
   (all follow-ups) were caught and retried successfully. Opus on the cases
@@ -377,7 +393,9 @@ Limitations).
 In scope: the four kinds of question in the assignment (rank, compare,
 single weather number, explain a score) for 21 hubs, with follow-ups, through
 a chat page and an API. Plus the bonus risk-change alert, on a short-term
-score from the 7-day forecast, which the agent can also quote for "this
+score from the 7-day forecast (not on the long-term score, which barely
+moves; why, and why there is no scheduled scan: "Short-term risk score and
+alert" above), which the agent can also quote for "this
 week" questions.
 
 Out of scope, on purpose:
