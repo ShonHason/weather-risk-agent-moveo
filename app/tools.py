@@ -1,14 +1,14 @@
 """The tools Claude can call. Each one is plain, deterministic Python.
 
 Claude decides WHICH tool to call; the numbers always come from our code
-(app/scoring.py and app/metrics.py), never from the model.
+(app/scoring.py, app/metrics.py and app/forecast.py), never from the model.
 
 TOOL_DEFINITIONS is what we send to Claude. run_tool() executes a call.
 """
 
 import json
 
-from app import metrics, scoring
+from app import forecast, metrics, scoring
 from app import scoring_config as config
 from app.hubs import STATE_TO_REGION, load_hubs
 
@@ -124,6 +124,13 @@ def compare_hubs(hubs, categories=None):
 
 
 # --- helpers ---------------------------------------------------------------
+
+def get_forecast_risk(hub):
+    """Short-term risk for one hub from the 7-day forecast (not the long-term score)."""
+    result = forecast.score_hub_forecast(find_hub(hub))
+    result["scales"] = config.FORECAST_SCALES   # so Claude can explain the score
+    return result
+
 
 def find_hub(text):
     """Find a hub by id, name or city, ignoring case ("Miami" -> miami hub)."""
@@ -302,6 +309,21 @@ TOOL_DEFINITIONS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "get_forecast_risk",
+        "description": (
+            "Short-term risk for ONE hub over the next 7 days, from the weather "
+            "forecast: a 0-100 score (its worst hazard), each hazard's worst day "
+            "and score (snow, heavy_rain, wind, heat, cold), the daily forecast "
+            "values and the scales used. Separate from the long-term risk score."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"hub": _HUB},
+            "required": ["hub"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 TOOLS = {
@@ -309,6 +331,7 @@ TOOLS = {
     "get_hub_metrics": get_hub_metrics,
     "rank_hubs": rank_hubs,
     "compare_hubs": compare_hubs,
+    "get_forecast_risk": get_forecast_risk,
 }
 
 
@@ -321,3 +344,6 @@ def run_tool(name, tool_input):
     except (ValueError, TypeError, KeyError) as error:
         # Bad input (e.g. unknown hub): tell Claude so it can correct itself.
         return f"Error: {error}", True
+    except OSError as error:
+        # A live API (the forecast) is unreachable: Claude can say so.
+        return f"Error: data source unavailable: {error}", True

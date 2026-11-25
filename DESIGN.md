@@ -6,9 +6,9 @@ commands are in README.md; the step-by-step decisions are in PLAN.md.
 ## System architecture
 
 ```
- chat page (app/static/index.html) / curl
-      |  HTTP: POST /chat, GET /hubs, GET /scores
-      v
+ chat page (app/static/index.html) / curl     scheduler (cron, ...)
+      |  HTTP: POST /chat, GET /hubs, GET /scores      | POST /alerts/check
+      v                                                v
  FastAPI (app/api.py) -- one Agent per session_id, in memory
       |
       v
@@ -17,14 +17,23 @@ commands are in README.md; the step-by-step decisions are in PLAN.md.
       |
       | runs tool calls
       v
- Tools (app/tools.py): list_hubs, get_hub_metrics, rank_hubs, compare_hubs
-      |
+ Tools (app/tools.py): list_hubs, get_hub_metrics, rank_hubs, compare_hubs,
+      |                get_forecast_risk
       v
  Scoring (scoring.py, metrics.py) --> clients (nri.py, weather.py)
-                                          |
-                                          v
-                              SQLite cache <-- FEMA NRI / Open-Meteo APIs
+      |                                   |
+      |                                   v
+      |                       SQLite cache <-- FEMA NRI / Open-Meteo archive
+      |
+ Short-term score (forecast.py) <-- Open-Meteo forecast (never cached)
+      ^
+      |
+ Alerts (alerts.py) --> data/history.db (last scores + alerts)
+                    --> ALERT_WEBHOOK_URL (outgoing JSON POST)
 ```
+
+(The FastAPI app also serves `POST /alerts/check` and `GET /alerts`, which
+call `alerts.py`.)
 
 - **Claude decides, code computes.** Claude picks which tools to call and
   writes the explanation; every score, metric and ranking comes from our
@@ -96,6 +105,36 @@ commands are in README.md; the step-by-step decisions are in PLAN.md.
   assumptions folded under "How I got this". Model output is inserted as
   plain text (`textContent`), never as HTML, so an answer cannot inject
   markup or scripts into the page.
+- **Short-term risk score and alert** (`app/forecast.py`, `app/alerts.py`).
+  The long-term score barely moves (NRI updates yearly, a 5-year window
+  shifts once a year), so an alert on it would almost never fire. The alert
+  uses a second, short-term score from Open-Meteo's 7-day forecast instead:
+  it changes daily, and it is what an operations team wants to hear about.
+  - *Score:* for each hazard, the worst forecast day on a linear scale from
+    "no impact" (0) to "severe" (100), capped: snow 0-15 cm/day, rain
+    10-50 mm/day, gusts 40-100 km/h, max temperature 30-42 °C, min
+    temperature -10 to -30 °C. The hub's score is its worst hazard (the
+    same "one severe hazard is enough" logic as the long-term score). All
+    scales are in `FORECAST_SCALES` in `app/scoring_config.py`.
+  - *Check:* `POST /alerts/check` recomputes all hubs, compares each with
+    its score from the previous check and raises an alert on a move of
+    10 points or more (`ALERT_MIN_CHANGE`; smaller moves are day-to-day
+    forecast noise). A hub's first check only saves a baseline.
+  - *Trigger:* the endpoint is the webhook. Scheduling stays outside the
+    app (cron, a cloud scheduler, a CI job): no scheduler dependency, and
+    no duplicate checks when the server runs several workers. It needs the
+    `X-Alert-Token` header (`ALERT_TOKEN`, compared in constant time), so
+    strangers can't trigger it; with no token configured it is disabled.
+  - *Delivery:* every alert is saved and listed at `GET /alerts`. If
+    `ALERT_WEBHOOK_URL` is set, alerts are also POSTed there as generic
+    JSON with a readable `message` (standard library only). A failed
+    delivery doesn't fail the check: the alerts are already saved.
+  - *No caching:* `fetch_json(..., use_cache=False)` always downloads the
+    forecast; the permanent cache would freeze it.
+  - *Agent tool:* `get_forecast_risk` lets the agent answer "what's the risk
+    at Chicago this week?". It returns the score, each hazard's worst day,
+    the daily forecast values and the scales. The prompt keeps it apart
+    from the long-term score and tells Claude to say it can change.
 - **Ranking entries name their category** (`overall`, `winter`, ...), so a
   comparison across hazards (e.g. Miami vs Houston on hurricane and flood)
   is unambiguous.
@@ -113,18 +152,21 @@ app/            application code
   weather.py    Open-Meteo client (daily weather history)
   metrics.py    daily weather -> metrics (snow days, hot days, ...) per hub
   scoring.py    the deterministic risk score, breakdown and ranking
-  scoring_config.py  all weights, scales and thresholds of the score
-  tools.py      the 4 tools Claude can call, and their definitions
+  scoring_config.py  all weights, scales and thresholds of both scores
+  forecast.py   short-term risk score from the 7-day forecast
+  alerts.py     risk-change check: compare, store, notify
+  tools.py      the 5 tools Claude can call, and their definitions
   schemas.py    FinalAnswer: the JSON schema of the agent's answer
   agent.py      the Claude tool-use loop and system prompt
-  api.py        FastAPI app: /, /chat, /hubs, /scores
+  api.py        FastAPI app: /, /chat, /hubs, /scores, /alerts
   static/index.html  the chat page (HTML + CSS + plain JavaScript)
   env.py        loads .env (API key)
 data/
   hubs.json     the list of hubs (one line per hub)
   cache.db      SQLite cache, created on first use (not in git)
+  history.db    alert history: last short-term scores + alerts (not in git)
 evals/
-  cases.json    the 24 eval cases
+  cases.json    the 25 eval cases
   checks.py     deterministic checks run on each answer
 scripts/
   test.py       runs unit tests or the smoke check
@@ -143,6 +185,8 @@ tests/        unit tests (external APIs and Claude are mocked)
 - **Open-Meteo Historical Weather API.** No API key. Daily snowfall,
   precipitation, min/max temperature and max wind gusts for the last 5 full
   calendar years at each hub's coordinates.
+- **Open-Meteo Forecast API.** No API key. The same daily variables for the
+  next 7 days, for the short-term score only.
 
 ## Risk score
 Deterministic, 0-100, higher = more exposed. Computed in `app/scoring.py`;
@@ -179,7 +223,7 @@ Every result includes the breakdown (NRI part, worst hazard, observed metric
 and value), so the agent can explain *why* a hub scores high.
 
 ## Evaluation
-`python scripts/eval.py` runs 24 cases (`evals/cases.json`) against the real
+`python scripts/eval.py` runs 25 cases (`evals/cases.json`) against the real
 agent and checks each answer with deterministic code (`evals/checks.py`), no
 LLM judge, so a failure always has a concrete reason.
 
@@ -192,9 +236,10 @@ LLM judge, so a failure always has a concrete reason.
   wording ("2.6 times", "twice") exactly matches a ratio a tool returned
   ("40% more" always fails: no tool returns percent changes).
 - **Case types:** the 4 assignment questions, rankings by region/category,
-  single-number questions, multi-turn follow-ups, and traps: an unknown hub,
-  a forecast, a year without data, and questions that tempt the model to
-  calculate a difference or a ratio.
+  single-number questions, multi-turn follow-ups, two "this week" forecast
+  questions (must call `get_forecast_risk`, no long-term ranking), and
+  traps: an unknown hub, a year without data, and questions that tempt the
+  model to calculate a difference or a ratio.
 - **`--repeat N`** runs each case N times: answers vary between runs, so a
   pass rate says more than one pass.
 - **What the eval changed:** it found the model counting items ("the 21
@@ -210,25 +255,37 @@ LLM judge, so a failure always has a concrete reason.
   444/444 checks, $0.11, 6 s median per question; 4 incomplete answers
   (all follow-ups) were caught and retried successfully. Opus on the cases
   it used to fail (ratio, difference, comparisons), 3 times each: 12/12.
+  After adding the forecast tool (25 cases, once each): 25/25 runs,
+  156/156 checks, $0.04.
 
 ## Data storage choice
-**SQLite**, from the Python standard library. One file (`data/cache.db`), no
-server to run. API responses are cached by request URL, so each request is
-sent once: faster answers, fewer API calls, and the demo keeps working if an
-API is slow. JSON files would work too, but SQLite would also hold a score history
-(for the risk-change alert) without a new dependency. Postgres would be overkill for one process and a few MB of data.
+**SQLite**, from the Python standard library, in two files, no server to
+run:
+- `data/cache.db`: API responses cached by request URL, so each request is
+  sent once: faster answers, fewer API calls, and the demo keeps working if
+  an API is slow. Forecasts are never cached.
+- `data/history.db`: the alert history (each hub's last short-term score,
+  and every alert raised). A separate file on purpose: deleting `cache.db`
+  to refresh NRI data must not wipe the history.
+
+JSON files would work too, but SQLite handles "read the last scores, write
+the new ones and the alerts" in one transaction. Postgres would be overkill
+for one process and a few MB of data. Chat history is kept in memory (see
+Limitations).
 
 ## Scope
 In scope: the four kinds of question in the assignment (rank, compare,
 single weather number, explain a score) for 21 hubs, with follow-ups, through
-a chat page and an API.
+a chat page and an API. Plus the bonus risk-change alert, on a short-term
+score from the 7-day forecast, which the agent can also quote for "this
+week" questions.
 
 Out of scope, on purpose:
-- **Forecasts.** The question is long-term exposure for investment
-  decisions, so the agent uses 5 years of history, not next week's weather.
-  Asked for a forecast, it says so.
-- **Voice** (a bonus), **the risk-change alert** (a bonus) and **deployment
-  to a URL**: listed in PLAN.md as optional, after the core works.
+- **Forecasts in the long-term score.** Investment decisions are about
+  long-term exposure, so the main score uses 5 years of history only. The
+  forecast feeds only the separate short-term score.
+- **Voice** (a bonus) and **deployment to a URL**: listed in PLAN.md as
+  optional.
 - **Cost of disruption** (revenue, shipments per hub): we have no such data,
   so the score measures exposure, not financial impact.
 
@@ -275,5 +332,14 @@ Out of scope, on purpose:
   the Cascades).
 - Frequency ignores severity: a weak and a strong event count the same.
 - Open-Meteo's free tier is rate-limited; a 429 response is retried after 30 s.
+- Short-term alerts compare with the previous check only, so a slow drift
+  (a few points per check) never alerts. Comparing with the last alerted
+  score would catch it, at the cost of more state.
+- The short-term scales (e.g. 15 cm of snow in a day = 100) are judgment
+  calls, like the long-term ones, and they ignore how a hazard combines with
+  others (e.g. snow plus strong wind). Forecast values for days 5-7 are much
+  less reliable than for days 1-2.
+- A check calls the forecast API once per hub (21 calls, ~5 s); fine at this
+  size, but many hubs would need Open-Meteo's multi-location requests.
 - The cache never expires. That is fine for historical data, but NRI updates
   about once a year: delete `data/cache.db` to refresh.

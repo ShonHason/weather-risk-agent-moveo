@@ -24,12 +24,13 @@
 - **API:** FastAPI, run with uvicorn. Server creates a `session_id` when none is sent. **UI:** a single HTML page served by FastAPI.
 - **Chat memory:** in memory, keyed by `session_id`.
 - **Numbers come only from code.** Claude may only use numbers returned by tools, never calculate new ones (system prompt rule). Tools return the derived numbers analysts need: hub count, gaps between consecutive ranked hubs, score ranges, pair gaps (positive, naming the higher hub), averages, highest hub, and ratios of yearly counts only (never of 0-100 scores). The prompt states the data period.
+- **Short-term alert (Step 9):** a second deterministic score from the Open-Meteo 7-day forecast, separate from the long-term score. Per hazard (snow, heavy rain, wind gusts, heat, extreme cold) the worst forecast day on a linear scale (config in `app/scoring_config.py`); hub score = worst hazard. `POST /alerts/check` (header `X-Alert-Token` = `ALERT_TOKEN`) recomputes all hubs, compares with the last check, alerts on a change of >= 10 points, stores scores and alerts in `data/history.db` (separate from the cache, so clearing the cache keeps history), and POSTs alerts as generic JSON to `ALERT_WEBHOOK_URL` if set. `GET /alerts` lists them. First run = baseline. Scheduling stays outside the app (cron). Forecasts are never cached.
 - **Tests:** pytest; `httpx` approved as a test-only dependency for API tests.
-- **Eval:** 24 cases in `evals/cases.json`, deterministic checks only (no LLM judge). Expected values are computed by our code at eval time. Every case also checks: scores match the tools, no number the tools didn't return (incl. own round thresholds like "above 85"), no ratio wording. `--repeat N` measures pass rates. `rank_hubs` returns min/max score ranges so summaries can use real numbers.
+- **Eval:** 25 cases in `evals/cases.json`, deterministic checks only (no LLM judge). Expected values are computed by our code at eval time. Every case also checks: scores match the tools, no number the tools didn't return (incl. own round thresholds like "above 85"), no ratio wording. `--repeat N` measures pass rates. `rank_hubs` returns min/max score ranges so summaries can use real numbers.
 
 ## Assumptions
 - Hubs are fictional, located in real US cities. Defined in `data/hubs.json`. Adding a hub = adding one line (name, city, state, lat, lon, county FIPS). Region is derived from the state (US Census regions).
-- Exposure means long-term climate: 5 years of history. Forecasts are out of scope.
+- Exposure means long-term climate: 5 years of history. Forecasts are used only for the short-term alert score (and its agent tool).
 - "Last year" means the previous calendar year (2025).
 - Voice is out of scope.
 
@@ -44,8 +45,9 @@
 8. **Wrap-up:** finish README.md and DESIGN.md, then DESCRIPTION.md.
    Optional, only if time is left, in this order:
    - OpenFEMA `get_disaster_history` tool (context only)
-   - Alert when a hub's risk score changes (bonus)
+   - Alert when a hub's risk score changes (bonus): now Step 9
    - Deploy to a URL
+9. **Short-term risk alert:** forecast score, `POST /alerts/check`, `GET /alerts`, outgoing webhook. Then, if time allows, one agent tool for the forecast score ("what's the risk at Chicago this week?").
 
 ## Reminder
 - Export the full session with the AI agent at the end (mandatory deliverable).

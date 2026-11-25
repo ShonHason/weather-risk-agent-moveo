@@ -7,18 +7,23 @@ Endpoints:
     POST /chat     ask the agent; send the same session_id for follow-ups
     GET  /hubs     the list of hubs
     GET  /scores   the deterministic risk ranking (no LLM involved)
+    POST /alerts/check  recompute short-term scores, alert on changes
+                        (header X-Alert-Token must equal ALERT_TOKEN)
+    GET  /alerts   the most recent alerts
 """
 
+import os
+import secrets
 import uuid
 from pathlib import Path
 from typing import Literal, Optional
 
 import anthropic
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app import tools
+from app import alerts, tools
 from app.agent import Agent, AgentError
 from app.env import load_env
 from app.schemas import FinalAnswer
@@ -78,3 +83,22 @@ def hubs(region: Optional[Region] = None):
 @app.get("/scores")
 def scores(category: Optional[Category] = None, region: Optional[Region] = None):
     return tools.rank_hubs(category=category, region=region)
+
+
+@app.post("/alerts/check")
+def check_alerts(x_alert_token: Optional[str] = Header(default=None)):
+    """The webhook that triggers a risk-change check. Call it from a scheduler."""
+    expected = os.environ.get("ALERT_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=503, detail="ALERT_TOKEN is not set on the server")
+    if not secrets.compare_digest(x_alert_token or "", expected):
+        raise HTTPException(status_code=401, detail="Missing or wrong X-Alert-Token")
+    try:
+        return alerts.run_check()
+    except OSError as error:   # network error or HTTP error code
+        raise HTTPException(status_code=503, detail=f"Forecast API unavailable: {error}")
+
+
+@app.get("/alerts")
+def list_alerts(limit: int = Query(default=50, ge=1, le=500)):
+    return alerts.list_alerts(limit=limit)

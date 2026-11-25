@@ -11,7 +11,9 @@ exposed to winter disruption?" or "Why is the Dallas hub's risk high?" for 21
 fictional hubs in real US cities. It ranks and compares hubs, answers single
 weather questions ("What percentage of days in Denver last year had
 snowfall?"), explains its reasoning and handles follow-up questions. It runs
-as a web chat page on top of an API.
+as a web chat page on top of an API. A second, short-term score from the
+7-day forecast powers risk-change alerts for the operations team, and lets
+the agent answer "what's the risk at Chicago this week?".
 
 ## How it works
 1. **Public data.** FEMA's National Risk Index gives how often each hazard
@@ -24,10 +26,15 @@ as a web chat page on top of an API.
    storm) and an overall score. Every weight and scale is in one config file,
    so the score can be checked by hand and gives the same result every time.
 3. **Claude as the analyst's interface.** Claude reads the question, calls
-   our tools (list, rank, compare, get metrics), and writes the answer. It
+   our tools (list, rank, compare, get metrics, forecast), and writes the answer. It
    never computes a number: every score, gap, average and ratio it quotes
    comes from the tools.
-4. **Structured answers.** Claude must reply in a fixed JSON format (answer,
+4. **Risk-change alerts.** A scheduler calls a protected webhook
+   (`POST /alerts/check`). It scores every hub's coming week (snow, heavy
+   rain, wind, heat, extreme cold), compares with the previous check, and
+   alerts on a move of 10 points or more. Alerts are saved and can be pushed
+   to a chat channel's webhook.
+5. **Structured answers.** Claude must reply in a fixed JSON format (answer,
    ranking, reasoning, assumptions, confidence), checked by our code before
    it reaches the user.
 
@@ -42,19 +49,22 @@ as a web chat page on top of an API.
   largest model here, about 46 times cheaper and twice as fast.
 
 ## How we know it works
-- 76 unit tests for the scoring, tools, API and agent loop (external
-  services mocked).
-- An evaluation set of 24 questions, including traps (an unknown hub, a
-  forecast request, invitations to calculate). Answers are checked by code,
-  not by another model: correct hubs and scores, no invented numbers. Latest
-  run: 72 of 72 runs passed (each question 3 times).
+- 93 unit tests for the scoring, alerts, tools, API and agent loop
+  (external services mocked).
+- An evaluation set of 25 questions, including traps (an unknown hub, a
+  year without data, invitations to calculate) and "this week" forecast
+  questions. Answers are checked by code, not by another model: correct
+  hubs and scores, no invented numbers. All 25 pass; before the forecast
+  tool, the 24 earlier ones passed 72 of 72 runs (each question 3 times).
 
 ## Limits and scope
 - It measures exposure to weather, not financial impact: we have no data on
   each hub's revenue or volume.
-- Long-term history only, no forecasts.
+- The investment score uses long-term history only; the forecast is used
+  only for the short-term score and alerts, and forecasts can change.
 - Some scale choices (e.g. 40 snow days a year = maximum) are judgment calls,
   and small score differences between hubs should not decide an investment
   on their own.
 - Chat memory is kept in the server's memory and lost on restart.
-- Not yet built: the bonus risk-change alert, voice, and a public URL.
+- Alerts need an external scheduler to call the webhook (e.g. cron).
+- Not yet built: voice and a public URL.

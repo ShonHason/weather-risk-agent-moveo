@@ -24,13 +24,18 @@ RATE_LIMIT_RETRIES = 3
 RATE_LIMIT_WAIT_SECONDS = 30
 
 
-def fetch_json(url, params, db_path=cache.DB_PATH):
-    """Return the JSON response for url + params, from the cache if possible."""
+def fetch_json(url, params, db_path=cache.DB_PATH, use_cache=True):
+    """Return the JSON response for url + params, from the cache if possible.
+
+    use_cache=False always downloads and stores nothing: for data that
+    changes, like forecasts.
+    """
     full_url = url + "?" + urlencode(params)
 
-    cached = cache.get(full_url, db_path)
-    if cached is not None:
-        return cached
+    if use_cache:
+        cached = cache.get(full_url, db_path)
+        if cached is not None:
+            return cached
 
     data = _download_with_retry(full_url)
 
@@ -39,7 +44,8 @@ def fetch_json(url, params, db_path=cache.DB_PATH):
     if isinstance(data, dict) and data.get("error"):
         raise ValueError(f"API returned an error for {full_url}: {data}")
 
-    cache.set(full_url, data, db_path)
+    if use_cache:
+        cache.set(full_url, data, db_path)
     return data
 
 

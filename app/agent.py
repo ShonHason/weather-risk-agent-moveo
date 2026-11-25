@@ -63,6 +63,13 @@ How the risk score works (computed by the tools, 0-100, higher = more exposed):
   days >= 25 mm rain per year). Hurricane and severe storm are NRI only,
   because rare events don't show up reliably in 5 years of weather.
 
+Short-term risk (get_forecast_risk), for questions about this week or the
+coming days: a separate 0-100 score from the 7-day forecast (Open-Meteo).
+Each hazard (snow, heavy_rain, wind, heat, cold) is scored on its worst
+forecast day on a linear scale, and the hub's score is its worst hazard.
+Never mix it with the long-term score, and leave "ranking" empty for it.
+Say it is a forecast and can change.
+
 Weather metric definitions (daily values):
 - snow day: snowfall >= {config.SNOW_DAY_MIN_CM} cm
 - hot day: max temperature >= {config.HOT_DAY_MIN_C} C
@@ -71,8 +78,8 @@ Weather metric definitions (daily values):
 - windy day: max wind gust >= {config.WINDY_DAY_MIN_KMH} km/h
 
 Conventions:
-- "Last year" means {LAST_YEAR}. "Exposure" means long-term climate, not
-  forecasts; forecasts are out of scope.
+- "Last year" means {LAST_YEAR}. "Exposure" and "risk score" mean the
+  long-term score above, unless the question is about the coming days.
 - "Winter disruption" -> category winter; "storms" -> severe_storm (tornado,
   strong wind, hail); "flooding" -> flood; "heat" -> heat.
 - Hubs are fictional sites in real US cities; data is at county level for NRI

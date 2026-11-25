@@ -165,9 +165,19 @@
     ]
   },
   {
-    "id": "trap_forecast",
+    "id": "forecast_risk",
+    "questions": ["What's the risk at the Chicago hub this week?"],
+    "checks": [
+      {"check": "tools_called", "any_of": ["get_forecast_risk"]},
+      {"check": "ranking_empty"},
+      {"check": "mentions", "any_of": ["forecast"]}
+    ]
+  },
+  {
+    "id": "forecast_snow",
     "questions": ["Will it snow in Chicago next week?"],
     "checks": [
+      {"check": "tools_called", "any_of": ["get_forecast_risk"]},
       {"check": "ranking_empty"},
       {"check": "mentions", "any_of": ["forecast"]}
     ]
