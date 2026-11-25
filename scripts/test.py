@@ -6,9 +6,12 @@
 
 import subprocess
 import sys
+import tempfile
+from datetime import date
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))  # so "import app" works from any folder
 
 
 def run_unit_tests():
@@ -18,8 +21,24 @@ def run_unit_tests():
 
 
 def run_smoke_check():
-    # Placeholder until step 2, when the real API clients exist.
-    print("Smoke check: nothing to check yet (added in step 2).")
+    """Call each real API once for Denver. Uses a temporary cache file,
+    so it always hits the network and never touches data/cache.db."""
+    from app import nri, weather
+
+    with tempfile.TemporaryDirectory() as folder:
+        db = Path(folder) / "smoke.db"
+
+        risk = nri.fetch_county_risk("08031", db)
+        print(f"NRI OK: {risk['county']}, {risk['state']} "
+              f"({risk['nri_version']}), winter weather score "
+              f"{risk['hazards']['winter_weather']['score']:.1f}")
+
+        days = weather.fetch_daily_weather(
+            39.7392, -104.9903, date(2025, 1, 1), date(2025, 12, 31), db
+        )
+        snow_days = sum(1 for s in days["snowfall_cm"] if s and s > 0)
+        print(f"Open-Meteo OK: {len(days['date'])} days in 2025, "
+              f"{snow_days} with snowfall")
     return 0
 
 
