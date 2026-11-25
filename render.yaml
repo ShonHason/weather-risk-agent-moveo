@@ -20,3 +20,5 @@ services:
         generateValue: true
       - key: ALERT_WEBHOOK_URL
         sync: false
+      - key: ALERT_CHANNEL_URL
+        sync: false

@@ -51,6 +51,7 @@ cp .env.example .env             # then add your ANTHROPIC_API_KEY
 | `AGENT_EFFORT` | `medium` | `low`, `medium` or `high` reasoning effort |
 | `ALERT_TOKEN` | (unset = alerts off) | secret for `POST /alerts/check` |
 | `ALERT_WEBHOOK_URL` | (unset) | where new alerts are POSTed as JSON |
+| `ALERT_CHANNEL_URL` | (unset) | Slack channel linked at the end of each alert and from the chat page's Slack button |
 
 ## Run the tests
 
@@ -166,7 +167,9 @@ Alerts are sorted biggest change first. Levels: Low (0-29), Moderate
 (api.slack.com/apps -> Create New App -> From scratch -> Incoming Webhooks ->
 On -> Add New Webhook -> pick the channel) and put its
 `https://hooks.slack.com/services/...` URL in `ALERT_WEBHOOK_URL`. Slack
-posts the `text` field as the message. Treat the URL as a secret: anyone
+posts the `text` field as the message. To end each alert with a
+"Discuss in the team channel" link, set `ALERT_CHANNEL_URL` to the
+channel's link (right-click the channel -> Copy -> Copy link). Treat the URL as a secret: anyone
 who has it can post to the channel. If a delivery fails, the check's
 `webhook` field shows the receiver's reply (e.g. `failed: HTTP 400
 invalid_payload`).

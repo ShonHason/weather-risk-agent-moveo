@@ -282,6 +282,23 @@ def test_summary_text_shows_before_only_when_it_differs():
     assert "(before: wind gusts 72 km/h on Tue, Dec 1)" in differs
 
 
+def test_summary_text_links_the_team_channel_when_set():
+    url = "https://example.slack.com/archives/C123"
+    with_link = alerts.summary_text([sample_alert()], channel_url=url)
+    assert with_link.splitlines()[-1] == f"<{url}|Discuss in the team channel>"
+    assert "Discuss" not in alerts.summary_text([sample_alert()])
+
+
+def test_notify_adds_channel_link_from_env(monkeypatch):
+    sent = []
+    monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.example.com/x")
+    monkeypatch.setenv("ALERT_CHANNEL_URL", "https://example.slack.com/archives/C123")
+    monkeypatch.setattr(alerts, "urlopen",
+                        lambda request, **kwargs: sent.append(request) or FakeResponse())
+    alerts.notify([sample_alert()], "now")
+    assert "archives/C123|Discuss" in json.loads(sent[0].data)["text"]
+
+
 def test_notify_posts_text_first_then_full_json(monkeypatch):
     sent = []
     monkeypatch.setenv("ALERT_WEBHOOK_URL", "https://hooks.example.com/x")
@@ -382,3 +399,17 @@ def test_forecast_tool_reports_unreachable_api_as_error(monkeypatch):
     monkeypatch.setattr(forecast, "fetch_forecast", offline)
     text, is_error = tools.run_tool("get_forecast_risk", {"hub": "Chicago"})
     assert is_error and "unavailable" in text
+
+
+# --- team channel link for the chat page -------------------------------------
+
+def test_team_channel_returns_the_link(monkeypatch):
+    monkeypatch.setenv("ALERT_CHANNEL_URL", "https://example.slack.com/archives/C123")
+    assert http.get("/team-channel").json() == {"url": "https://example.slack.com/archives/C123"}
+
+
+def test_team_channel_is_null_when_unset_or_not_https(monkeypatch):
+    monkeypatch.delenv("ALERT_CHANNEL_URL", raising=False)
+    assert http.get("/team-channel").json() == {"url": None}
+    monkeypatch.setenv("ALERT_CHANNEL_URL", "javascript:alert(1)")
+    assert http.get("/team-channel").json() == {"url": None}

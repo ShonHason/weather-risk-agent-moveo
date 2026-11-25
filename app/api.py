@@ -10,6 +10,7 @@ Endpoints:
     POST /alerts/check  recompute short-term scores, alert on changes
                         (header X-Alert-Token must equal ALERT_TOKEN)
     GET  /alerts   the most recent alerts
+    GET  /team-channel  the team's Slack channel link (for the chat page)
 """
 
 import os
@@ -102,3 +103,11 @@ def check_alerts(x_alert_token: Optional[str] = Header(default=None)):
 @app.get("/alerts")
 def list_alerts(limit: int = Query(default=50, ge=1, le=500)):
     return alerts.list_alerts(limit=limit)
+
+
+@app.get("/team-channel")
+def team_channel():
+    """The team's Slack channel (ALERT_CHANNEL_URL), or null if not set.
+    The chat page shows its channel button only when there is one."""
+    url = os.environ.get("ALERT_CHANNEL_URL", "")
+    return {"url": url if url.startswith("https://") else None}

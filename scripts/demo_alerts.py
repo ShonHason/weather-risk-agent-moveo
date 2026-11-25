@@ -11,6 +11,7 @@
 5. puts the scale back and deletes the temporary history.
 """
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -47,7 +48,8 @@ def main():
 
     print(f"   {len(result['alerts'])} alerts, webhook: {result['webhook']}\n")
     if result["alerts"]:
-        print(alerts.summary_text(result["alerts"]))   # the "text" that is sent
+        # exactly the "text" that is sent, including the channel link
+        print(alerts.summary_text(result["alerts"], os.environ.get("ALERT_CHANNEL_URL")))
     if result["webhook"] == "not configured":
         print("\nSet ALERT_WEBHOOK_URL in .env to send the alerts to a webhook.")
 

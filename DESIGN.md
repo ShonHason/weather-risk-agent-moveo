@@ -179,7 +179,16 @@ call `alerts.py`.)
     words ("Moderate (52) -> Severe (100)"; bands in `RISK_LEVELS`). People
     read it, and Slack incoming webhooks display it as the message; the
     full data follows for programs. A rejected delivery reports the
-    receiver's reply (e.g. Slack's `invalid_payload`). A failed
+    receiver's reply (e.g. Slack's `invalid_payload`). If
+    `ALERT_CHANNEL_URL` is set, the text ends with a "Discuss in the team
+    channel" link, so whoever receives the alert (e.g. in a direct
+    message) can take it to the team's channel in one click. It uses
+    Slack's `<url|label>` link format; other receivers show it raw. The
+    chat page shows the same link as a round Slack-logo button in the
+    header (hover label "Slack's Team Channel"). The page gets the link
+    from `GET /team-channel`, which returns it only if it starts with
+    `https://` (so a bad setting can't become a `javascript:` link); with
+    no link the button stays hidden. A failed
     delivery doesn't fail the check: the alerts are already saved.
   - *No caching:* `fetch_json(..., use_cache=False)` always downloads the
     forecast; the permanent cache would freeze it.

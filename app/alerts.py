@@ -201,7 +201,9 @@ def notify(alerts, checked_at):
         return "nothing to send"
     # "text" first: a short summary a person can read (and that Slack
     # displays directly), then the full data for programs.
-    body = json.dumps({"text": summary_text(alerts), "checked_at": checked_at,
+    channel_url = os.environ.get("ALERT_CHANNEL_URL")
+    body = json.dumps({"text": summary_text(alerts, channel_url),
+                       "checked_at": checked_at,
                        "alerts": alerts}, ensure_ascii=False).encode()
     request = Request(url, data=body, method="POST",
                       headers={"Content-Type": "application/json"})
@@ -216,13 +218,17 @@ def notify(alerts, checked_at):
         return f"failed: {error}"
 
 
-def summary_text(alerts):
+def summary_text(alerts, channel_url=None):
     """A short, human-readable summary of the alerts, one line per hub.
 
     Weather risk alert (7-day forecast): 2 hubs changed
     - Seattle Hub: up Moderate (52) -> Severe (100), wind gusts 71 km/h on Thu, Nov 26
     - Buffalo Hub: up Severe (88) -> Severe (100), wind gusts 84 km/h on Thu, Nov 26
       (before: rain 45 mm on Thu, Nov 26)
+    Discuss in the team channel   <- a link, when channel_url is given
+
+    channel_url: the team's Slack channel (ALERT_CHANNEL_URL). The link uses
+    Slack's <url|label> format, so Slack shows just the label.
     """
     count = f"{len(alerts)} hub{'s' if len(alerts) != 1 else ''} changed"
     lines = [f"Weather risk alert (7-day forecast): {count}"]
@@ -234,6 +240,8 @@ def summary_text(alerts):
         if before != now:
             line += f"\n  (before: {before})"
         lines.append(line)
+    if channel_url:
+        lines.append(f"<{channel_url}|Discuss in the team channel>")
     return "\n".join(lines)
 
 
