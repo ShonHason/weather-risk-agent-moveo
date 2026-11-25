@@ -28,7 +28,7 @@ commands are in README.md; the step-by-step decisions are in PLAN.md.
  Short-term score (forecast.py) <-- Open-Meteo forecast (never cached)
       ^
       |
- Alerts (alerts.py) --> data/history.db (last scores + alerts)
+ Alerts (alerts.py) --> data/history.db (score history + alerts)
                     --> ALERT_WEBHOOK_URL (outgoing JSON POST)
 ```
 
@@ -116,10 +116,24 @@ call `alerts.py`.)
     temperature -10 to -30 °C. The hub's score is its worst hazard (the
     same "one severe hazard is enough" logic as the long-term score). All
     scales are in `FORECAST_SCALES` in `app/scoring_config.py`.
-  - *Check:* `POST /alerts/check` recomputes all hubs, compares each with
-    its score from the previous check and raises an alert on a move of
-    10 points or more (`ALERT_MIN_CHANGE`; smaller moves are day-to-day
-    forecast noise). A hub's first check only saves a baseline.
+  - *Check:* `POST /alerts/check` recomputes all hubs and stores every
+    score (with its driving hazard) in `score_history`. A hub alerts when
+    its new score is at least 10 points (`ALERT_MIN_CHANGE`; smaller moves
+    are day-to-day forecast noise) away from **any** of its scores in the
+    last 3 days (`ALERT_WINDOW_DAYS`):
+    - comparing with the whole window, not only the previous check,
+      catches a gradual rise: 5 points a day alerts on day 2;
+    - only scores since the hub's last alert count, so one change alerts
+      once, not at every check until it leaves the window;
+    - with no check in the window (checks paused), it compares with the
+      last check;
+    - the old or new score must be at least 40 (`ALERT_MIN_LEVEL`): a move
+      between two low scores (14 -> 28) is not something ops acts on.
+
+    Each alert names the score it was compared with, when, and what drove
+    both scores ("now: wind 66.6 km/h on 11-27; before: heavy_rain 45 mm on
+    11-26"), so the reader sees *what* changed. Alerts are sorted biggest
+    change first. A hub's first check only saves a baseline.
   - *Trigger:* the endpoint is the webhook. Scheduling stays outside the
     app (cron, a cloud scheduler, a CI job): no scheduler dependency, and
     no duplicate checks when the server runs several workers. It needs the
@@ -164,7 +178,7 @@ app/            application code
 data/
   hubs.json     the list of hubs (one line per hub)
   cache.db      SQLite cache, created on first use (not in git)
-  history.db    alert history: last short-term scores + alerts (not in git)
+  history.db    alert history: every short-term score + alerts (not in git)
 evals/
   cases.json    the 25 eval cases
   checks.py     deterministic checks run on each answer
@@ -264,8 +278,8 @@ run:
 - `data/cache.db`: API responses cached by request URL, so each request is
   sent once: faster answers, fewer API calls, and the demo keeps working if
   an API is slow. Forecasts are never cached.
-- `data/history.db`: the alert history (each hub's last short-term score,
-  and every alert raised). A separate file on purpose: deleting `cache.db`
+- `data/history.db`: the alert history (every hub's short-term score at
+  every check, and every alert raised). A separate file on purpose: deleting `cache.db`
   to refresh NRI data must not wipe the history.
 
 JSON files would work too, but SQLite handles "read the last scores, write
@@ -332,9 +346,14 @@ Out of scope, on purpose:
   the Cascades).
 - Frequency ignores severity: a weak and a strong event count the same.
 - Open-Meteo's free tier is rate-limited; a 429 response is retried after 30 s.
-- Short-term alerts compare with the previous check only, so a slow drift
-  (a few points per check) never alerts. Comparing with the last alerted
-  score would catch it, at the cost of more state.
+- A drift slower than 10 points in 3 days never alerts (by design: it is
+  not sudden). The window and thresholds are judgment calls in the config.
+- Changing a forecast scale changes every hub's score, so the next check
+  alerts on many hubs although the weather didn't change ("before" and
+  "now" then show the same value). Clearing `data/history.db` after a scale
+  change avoids it; storing a fingerprint of the scales would automate it.
+- The score history grows by 21 rows per check and is never pruned (about
+  30,000 rows a year at 4 checks a day: no problem for SQLite).
 - The short-term scales (e.g. 15 cm of snow in a day = 100) are judgment
   calls, like the long-term ones, and they ignore how a hazard combines with
   others (e.g. snow plus strong wind). Forecast values for days 5-7 are much

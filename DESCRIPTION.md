@@ -31,8 +31,9 @@ the agent answer "what's the risk at Chicago this week?".
    comes from the tools.
 4. **Risk-change alerts.** A scheduler calls a protected webhook
    (`POST /alerts/check`). It scores every hub's coming week (snow, heavy
-   rain, wind, heat, extreme cold), compares with the previous check, and
-   alerts on a move of 10 points or more. Alerts are saved and can be pushed
+   rain, wind, heat, extreme cold), compares with its scores of the last 3
+   days, and alerts on a move of 10 points or more (so gradual rises count
+   too), naming what drove the change. Alerts are saved and can be pushed
    to a chat channel's webhook.
 5. **Structured answers.** Claude must reply in a fixed JSON format (answer,
    ranking, reasoning, assumptions, confidence), checked by our code before
@@ -49,7 +50,7 @@ the agent answer "what's the risk at Chicago this week?".
   largest model here, about 46 times cheaper and twice as fast.
 
 ## How we know it works
-- 93 unit tests for the scoring, alerts, tools, API and agent loop
+- 99 unit tests for the scoring, alerts, tools, API and agent loop
   (external services mocked).
 - An evaluation set of 25 questions, including traps (an unknown hub, a
   year without data, invitations to calculate) and "this week" forecast

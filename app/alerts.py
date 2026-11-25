@@ -2,8 +2,9 @@
 
 One check (run_check):
   1. compute every hub's short-term score from the forecast (forecast.py);
-  2. compare with the score saved at the previous check;
-  3. a move of at least ALERT_MIN_CHANGE points is an alert;
+  2. compare it with the hub's recent scores (see past_scores_to_compare);
+  3. at least ALERT_MIN_CHANGE points away from one of them, with the old
+     or new score at least ALERT_MIN_LEVEL, is an alert;
   4. save the new scores and the alerts in data/history.db;
   5. if ALERT_WEBHOOK_URL is set, POST the alerts there as JSON.
 
@@ -17,7 +18,7 @@ NRI data) keeps the alert history.
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -28,15 +29,23 @@ from app.hubs import load_hubs
 
 HISTORY_DB_PATH = Path(__file__).parent.parent / "data" / "history.db"
 
+# The columns of one stored score, in order.
+HISTORY_COLUMNS = ["hub_id", "checked_at", "score", "hazard", "value", "unit",
+                   "date", "alerted"]
+
 
 def _connect(db_path):
     connection = sqlite3.connect(db_path)
-    # The latest short-term score per hub: what the next check compares with.
+    # Every hub's short-term score at every check, with what drove it.
+    # alerted = 1 when this score raised an alert.
     connection.execute(
-        "CREATE TABLE IF NOT EXISTS forecast_scores ("
-        "  hub_id TEXT PRIMARY KEY,"
+        "CREATE TABLE IF NOT EXISTS score_history ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  hub_id TEXT NOT NULL,"
+        "  checked_at TEXT NOT NULL,"
         "  score REAL NOT NULL,"
-        "  checked_at TEXT NOT NULL"
+        "  hazard TEXT, value REAL, unit TEXT, date TEXT,"
+        "  alerted INTEGER NOT NULL"
         ")"
     )
     # Every alert ever raised, stored as JSON.
@@ -50,58 +59,109 @@ def _connect(db_path):
     return connection
 
 
-def find_changes(previous_scores, current_results, min_change=None):
-    """Compare scores and return one alert per hub that moved enough.
+def past_scores_to_compare(history, now, window_days=None):
+    """Which of a hub's past scores a new score is compared with.
 
-    previous_scores: {hub_id: score} from the last check.
+    history: the hub's stored scores, oldest first.
+    - The scores of the last window_days days, so a gradual rise (5 points
+      a day) is caught, not only a jump since the previous check.
+    - But only from its last alert on (that alert included), so the same
+      change doesn't alert again at every check.
+    - No check in the window (e.g. checks were paused): the last check.
+    - No history at all: [] (a new hub, the check saves a baseline).
+    """
+    if window_days is None:
+        window_days = config.ALERT_WINDOW_DAYS
+    if not history:
+        return []
+    window_start = now - timedelta(days=window_days)
+    recent = [row for row in history
+              if datetime.fromisoformat(row["checked_at"]) >= window_start]
+    if not recent:
+        return [history[-1]]
+    alert_positions = [i for i, row in enumerate(recent) if row["alerted"]]
+    if alert_positions:
+        return recent[alert_positions[-1]:]
+    return recent
+
+
+def find_changes(past_by_hub, current_results, min_change=None, min_level=None):
+    """Compare each hub's new score with its past scores; return the alerts.
+
+    past_by_hub: {hub_id: [past score rows]} from past_scores_to_compare.
     current_results: score_hub_forecast() results from this check.
-    A hub missing from previous_scores is new: baseline, no alert.
+    Alerts are sorted by size of change, biggest first.
     """
     if min_change is None:
         min_change = config.ALERT_MIN_CHANGE
+    if min_level is None:
+        min_level = config.ALERT_MIN_LEVEL
     alerts = []
     for result in current_results:
-        old = previous_scores.get(result["hub_id"])
-        if old is None:
-            continue
-        change = round(result["score"] - old, 1)
+        past = past_by_hub.get(result["hub_id"])
+        if not past:
+            continue   # new hub: baseline only
+        # The past score furthest from the new one (oldest if tied).
+        before = max(past, key=lambda row: abs(result["score"] - row["score"]))
+        change = round(result["score"] - before["score"], 1)
         if abs(change) < min_change:
             continue
+        if max(result["score"], before["score"]) < min_level:
+            continue   # a move between two low scores
         direction = "up" if change > 0 else "down"
+        now_driver = {key: result[key] for key in ("hazard", "value", "unit", "date")}
+        before_driver = {key: before[key] for key in ("hazard", "value", "unit", "date")}
         alerts.append({
             "hub_id": result["hub_id"],
             "hub_name": result["hub_name"],
-            "old_score": old,
+            "old_score": before["score"],
             "new_score": result["score"],
             "change": change,
             "direction": direction,
-            "hazard": result["hazard"],
-            "date": result["date"],
-            "value": result["value"],
-            "unit": result["unit"],
+            "since": before["checked_at"],
+            "now": now_driver,
+            "before": before_driver,
             "message": (
                 f"{result['hub_name']}: short-term risk {direction} "
-                f"{old} -> {result['score']} (worst: {result['hazard']} "
-                f"{result['value']} {result['unit']} on {result['date']})"
+                f"{before['score']} -> {result['score']} since {before['checked_at']} "
+                f"(now: {_describe(now_driver)}; before: {_describe(before_driver)})"
             ),
         })
-    return alerts
+    return sorted(alerts, key=lambda alert: abs(alert["change"]), reverse=True)
 
 
-def run_check(db_path=HISTORY_DB_PATH, hubs=None, score_fn=score_hub_forecast):
+def _describe(driver):
+    """'wind 66.6 km/h on 2026-11-27'"""
+    return f"{driver['hazard']} {driver['value']} {driver['unit']} on {driver['date']}"
+
+
+def run_check(db_path=HISTORY_DB_PATH, hubs=None, score_fn=score_hub_forecast,
+              now=None):
     """Run one check and return what happened (see module docstring)."""
     hubs = hubs if hubs is not None else load_hubs()
-    checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = now or datetime.now(timezone.utc)
+    checked_at = now.isoformat(timespec="seconds")
     results = [score_fn(hub) for hub in hubs]
 
     with _connect(db_path) as connection:
-        previous = dict(connection.execute(
-            "SELECT hub_id, score FROM forecast_scores").fetchall())
-        alerts = find_changes(previous, results)
+        rows = connection.execute(
+            f"SELECT {', '.join(HISTORY_COLUMNS)} FROM score_history ORDER BY id"
+        ).fetchall()
+        history = {}
+        for row in rows:
+            row = dict(zip(HISTORY_COLUMNS, row))
+            history.setdefault(row["hub_id"], []).append(row)
+
+        past_by_hub = {hub_id: past_scores_to_compare(hub_history, now)
+                       for hub_id, hub_history in history.items()}
+        alerts = find_changes(past_by_hub, results)
+        alerted = {alert["hub_id"] for alert in alerts}
+
         connection.executemany(
-            "INSERT OR REPLACE INTO forecast_scores (hub_id, score, checked_at)"
-            " VALUES (?, ?, ?)",
-            [(r["hub_id"], r["score"], checked_at) for r in results])
+            f"INSERT INTO score_history ({', '.join(HISTORY_COLUMNS)})"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [(r["hub_id"], checked_at, r["score"], r["hazard"], r["value"],
+              r["unit"], r["date"], int(r["hub_id"] in alerted)) for r in results])
         connection.executemany(
             "INSERT INTO alerts (created_at, alert) VALUES (?, ?)",
             [(checked_at, json.dumps(alert)) for alert in alerts])
@@ -109,7 +169,7 @@ def run_check(db_path=HISTORY_DB_PATH, hubs=None, score_fn=score_hub_forecast):
     return {
         "checked_at": checked_at,
         "hubs_checked": len(results),
-        "new_baselines": [r["hub_id"] for r in results if r["hub_id"] not in previous],
+        "new_baselines": [r["hub_id"] for r in results if r["hub_id"] not in history],
         "alerts": alerts,
         "webhook": notify(alerts, checked_at),
     }

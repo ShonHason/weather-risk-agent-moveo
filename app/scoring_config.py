@@ -60,6 +60,13 @@ FORECAST_SCALES = {
     "cold": {"variable": "temp_min_c", "zero_at": -10, "full_at": -30, "unit": "°C"},
 }
 
-# Alert when a hub's short-term score moves by at least this many points
-# since the last check. Forecasts change daily: smaller moves are noise.
+# Alert when a hub's short-term score is at least ALERT_MIN_CHANGE points
+# away from any of its scores in the last ALERT_WINDOW_DAYS days (only
+# counting checks since its last alert). The window catches gradual rises,
+# not only jumps since the previous check. Forecasts change daily: smaller
+# moves are noise.
 ALERT_MIN_CHANGE = 10
+ALERT_WINDOW_DAYS = 3
+# ...and only when the old or the new score is at least this high: a move
+# between two low scores (e.g. 14 -> 28) is not worth an alert.
+ALERT_MIN_LEVEL = 40

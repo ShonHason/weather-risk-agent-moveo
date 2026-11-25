@@ -25,6 +25,7 @@
 - **Chat memory:** in memory, keyed by `session_id`.
 - **Numbers come only from code.** Claude may only use numbers returned by tools, never calculate new ones (system prompt rule). Tools return the derived numbers analysts need: hub count, gaps between consecutive ranked hubs, score ranges, pair gaps (positive, naming the higher hub), averages, highest hub, and ratios of yearly counts only (never of 0-100 scores). The prompt states the data period.
 - **Short-term alert (Step 9):** a second deterministic score from the Open-Meteo 7-day forecast, separate from the long-term score. Per hazard (snow, heavy rain, wind gusts, heat, extreme cold) the worst forecast day on a linear scale (config in `app/scoring_config.py`); hub score = worst hazard. `POST /alerts/check` (header `X-Alert-Token` = `ALERT_TOKEN`) recomputes all hubs, compares with the last check, alerts on a change of >= 10 points, stores scores and alerts in `data/history.db` (separate from the cache, so clearing the cache keeps history), and POSTs alerts as generic JSON to `ALERT_WEBHOOK_URL` if set. `GET /alerts` lists them. First run = baseline. Scheduling stays outside the app (cron). Forecasts are never cached.
+- **Alert comparison (Step 10):** every check is stored (`score_history`). A hub alerts when its score is >= 10 points from any of its scores in the last 3 days (`ALERT_WINDOW_DAYS`), counting only checks since its last alert (no repeats); so a gradual rise alerts too. No check in the window: compare with the last check. Only when the old or new score is >= 40 (`ALERT_MIN_LEVEL`), so moves between low scores are not alerts. Each alert shows what it was compared with (score, time, driving hazard), and alerts are sorted by size of change.
 - **Tests:** pytest; `httpx` approved as a test-only dependency for API tests.
 - **Eval:** 25 cases in `evals/cases.json`, deterministic checks only (no LLM judge). Expected values are computed by our code at eval time. Every case also checks: scores match the tools, no number the tools didn't return (incl. own round thresholds like "above 85"), no ratio wording. `--repeat N` measures pass rates. `rank_hubs` returns min/max score ranges so summaries can use real numbers.
 
@@ -48,6 +49,7 @@
    - Alert when a hub's risk score changes (bonus): now Step 9
    - Deploy to a URL
 9. **Short-term risk alert:** forecast score, `POST /alerts/check`, `GET /alerts`, outgoing webhook. Then, if time allows, one agent tool for the forecast score ("what's the risk at Chicago this week?").
+10. **Alert over a window:** catch gradual rises over the last 3 days, minimum level, show the previous driver, sort by change.
 
 ## Reminder
 - Export the full session with the AI agent at the end (mandatory deliverable).

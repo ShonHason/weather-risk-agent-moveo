@@ -2,6 +2,7 @@
 No real API calls: downloads, scores and the outgoing webhook are faked."""
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,17 +64,66 @@ def test_forecast_is_never_cached(tmp_path, monkeypatch):
 
 # --- comparing scores -------------------------------------------------------
 
-def test_find_changes_alerts_only_on_big_moves():
-    previous = {"chicago": 20.0, "denver": 50.0, "miami": 40.0}
-    current = [result("chicago", 35.0), result("denver", 45.0), result("miami", 30.0)]
-    changes = alerts.find_changes(previous, current, min_change=10)
+DAY_0 = datetime(2026, 12, 1, 6, 0, tzinfo=timezone.utc)
+
+
+def day(n):
+    """DAY_0 plus n days (n may be a fraction)."""
+    return DAY_0 + timedelta(days=n)
+
+
+def past(score, at_day, alerted=False):
+    """One stored score row."""
+    return {"score": score, "checked_at": day(at_day).isoformat(), "alerted": alerted,
+            "hazard": "wind", "value": 50.0, "unit": "km/h", "date": "2026-11-30"}
+
+
+def test_compare_with_window_scores_since_last_alert():
+    history = [past(10, 0), past(20, 1), past(35, 2, alerted=True), past(40, 3)]
+    compared = alerts.past_scores_to_compare(history, now=day(3.5), window_days=3)
+    assert [row["score"] for row in compared] == [35, 40]   # from the alert on
+
+
+def test_compare_drops_scores_older_than_the_window():
+    history = [past(10, 0), past(20, 2), past(25, 3)]
+    compared = alerts.past_scores_to_compare(history, now=day(4), window_days=3)
+    assert [row["score"] for row in compared] == [20, 25]
+
+
+def test_compare_with_last_check_when_window_is_empty():
+    history = [past(10, 0), past(20, 1)]
+    compared = alerts.past_scores_to_compare(history, now=day(30), window_days=3)
+    assert [row["score"] for row in compared] == [20]
+
+
+def test_find_changes_uses_the_furthest_past_score():
+    changes = alerts.find_changes({"chicago": [past(40, 0), past(45, 1)]},
+                                  [result("chicago", 50.0)], min_change=10, min_level=40)
+    assert changes[0]["old_score"] == 40 and changes[0]["change"] == 10.0
+    assert changes[0]["since"] == day(0).isoformat()
+    assert changes[0]["before"]["hazard"] == "wind"      # what drove the old score
+    assert changes[0]["now"]["hazard"] == "snow"
+    assert "before: wind 50.0 km/h" in changes[0]["message"]
+
+
+def test_find_changes_ignores_moves_between_low_scores():
+    changes = alerts.find_changes({"minneapolis": [past(14, 0)], "denver": [past(30, 0)]},
+                                  [result("minneapolis", 28.0), result("denver", 45.0)],
+                                  min_change=10, min_level=40)
+    assert [a["hub_id"] for a in changes] == ["denver"]   # 45 reaches the level
+
+
+def test_find_changes_alerts_on_drops_and_sorts_biggest_first():
+    changes = alerts.find_changes(
+        {"chicago": [past(50, 0)], "miami": [past(90, 0)], "denver": [past(60, 0)]},
+        [result("chicago", 62.0), result("miami", 40.0), result("denver", 62.0)],
+        min_change=10, min_level=40)
     assert [(a["hub_id"], a["change"], a["direction"]) for a in changes] == [
-        ("chicago", 15.0, "up"), ("miami", -10.0, "down")]
-    assert "Chicago Hub" in changes[0]["message"]
+        ("miami", -50.0, "down"), ("chicago", 12.0, "up")]
 
 
 def test_find_changes_new_hub_is_baseline_only():
-    assert alerts.find_changes({}, [result("chicago", 90.0)], min_change=10) == []
+    assert alerts.find_changes({}, [result("chicago", 90.0)]) == []
 
 
 # --- one check --------------------------------------------------------------
@@ -81,36 +131,45 @@ def test_find_changes_new_hub_is_baseline_only():
 real_run_check = alerts.run_check   # the API tests below replace it
 
 
-def run(db, scores):
-    """Run a check with fixed fake scores per hub."""
+def run(db, scores, at_day=0):
+    """Run a check at DAY_0 + at_day with fixed fake scores per hub."""
     hubs = [{"id": hub_id} for hub_id in scores]
-    return real_run_check(db, hubs=hubs,
-                            score_fn=lambda hub: result(hub["id"], scores[hub["id"]]))
+    return real_run_check(db, hubs=hubs, now=day(at_day),
+                          score_fn=lambda hub: result(hub["id"], scores[hub["id"]]))
 
 
-def test_first_check_is_baseline_then_change_alerts(tmp_path, monkeypatch):
+@pytest.fixture
+def db(tmp_path, monkeypatch):
     monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
-    db = tmp_path / "history.db"
+    return tmp_path / "history.db"
 
-    first = run(db, {"chicago": 20.0, "denver": 50.0})
+
+def test_first_check_is_baseline_then_change_alerts(db):
+    first = run(db, {"chicago": 40.0, "denver": 50.0})
     assert first["alerts"] == []
     assert first["new_baselines"] == ["chicago", "denver"]
 
-    second = run(db, {"chicago": 45.0, "denver": 52.0})
+    second = run(db, {"chicago": 65.0, "denver": 52.0}, at_day=0.25)
     assert [a["hub_id"] for a in second["alerts"]] == ["chicago"]
     assert second["webhook"] == "not configured"
 
     saved = alerts.list_alerts(db)
-    assert len(saved) == 1 and saved[0]["new_score"] == 45.0
+    assert len(saved) == 1 and saved[0]["new_score"] == 65.0
 
 
-def test_check_compares_with_previous_check(tmp_path, monkeypatch):
-    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
-    db = tmp_path / "history.db"
-    run(db, {"chicago": 20.0})
-    run(db, {"chicago": 45.0})                       # alert
-    third = run(db, {"chicago": 47.0})               # +2 vs last check
-    assert third["alerts"] == []
+def test_gradual_rise_alerts_once(db):
+    """5 points a day: no single check moves 10, but the window catches it."""
+    results = [run(db, {"chicago": score}, at_day=n)
+               for n, score in enumerate([40.0, 45.0, 50.0, 55.0, 60.0])]
+    alert_days = [n for n, r in enumerate(results) if r["alerts"]]
+    assert alert_days == [2, 4]          # 40 -> 50, then 50 -> 60 (not every day)
+    assert results[2]["alerts"][0]["old_score"] == 40.0
+
+
+def test_no_repeat_alert_after_an_alert(db):
+    run(db, {"chicago": 40.0})
+    assert run(db, {"chicago": 60.0}, at_day=0.5)["alerts"]     # alert
+    assert run(db, {"chicago": 62.0}, at_day=1)["alerts"] == []  # still 60ish
 
 
 # --- outgoing webhook -------------------------------------------------------
@@ -156,7 +215,7 @@ http = TestClient(api.app)
 def fake_check(tmp_path, monkeypatch):
     """Point the endpoints at a temporary history.db with fake scores."""
     db = tmp_path / "history.db"
-    scores = {"chicago": 20.0}
+    scores = {"chicago": 40.0}
     monkeypatch.setenv("ALERT_TOKEN", "secret")
     monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
     monkeypatch.setattr(alerts, "run_check", lambda: run(db, scores))
@@ -182,7 +241,7 @@ def test_check_endpoint_baseline_then_alert(fake_check):
 
     fake_check["chicago"] = 60.0
     reply = http.post("/alerts/check", headers=headers).json()
-    assert reply["alerts"][0]["change"] == 40.0
+    assert reply["alerts"][0]["change"] == 20.0
 
     listed = http.get("/alerts").json()
     assert listed[0]["hub_id"] == "chicago"

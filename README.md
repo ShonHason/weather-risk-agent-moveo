@@ -116,9 +116,12 @@ python -m app.forecast           # short-term (7-day forecast) score per hub, li
 ## Risk-change alerts
 
 A second, short-term score per hub comes from the 7-day forecast. A check
-recomputes it for every hub and raises an alert when a hub's score moved by
-10 points or more since the previous check. The first check only saves a
-baseline.
+recomputes it for every hub and raises an alert when a hub's score is 10
+points or more away from any of its scores in the last 3 days (so a gradual
+rise is caught too), and the old or new score is at least 40. After an
+alert, the hub's older scores stop counting, so the same change doesn't
+alert twice. The first check only saves a baseline. All these numbers are
+in `app/scoring_config.py`.
 
 Set `ALERT_TOKEN` in `.env`, start the server, then trigger a check:
 
@@ -136,7 +139,8 @@ scheduler. For example, every 6 hours with cron:
 
 If `ALERT_WEBHOOK_URL` is set, new alerts are also POSTed there as JSON
 (`{"checked_at": ..., "alerts": [{"hub_name", "old_score", "new_score",
-"change", "hazard", "date", "message", ...}]}`).
+"change", "since", "now": {hazard, value, unit, date}, "before": {...},
+"message"}, ...]}`), biggest change first.
 
 **Demo** (forecasts rarely move 10 points within minutes): run a check,
 lower one scale in `FORECAST_SCALES` in `app/scoring_config.py` (e.g. wind
