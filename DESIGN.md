@@ -272,6 +272,7 @@ scripts/
   demo_alerts.py  alert demo: baseline, in-memory scale change, re-check
 render.yaml     Render deployment blueprint
 tests/        unit tests (external APIs and Claude are mocked)
+docs/ai-session/  the full conversation with the AI agent (plan + build)
 ```
 
 ## Data sources
@@ -383,8 +384,7 @@ Out of scope, on purpose:
 - **Forecasts in the long-term score.** Investment decisions are about
   long-term exposure, so the main score uses 5 years of history only. The
   forecast feeds only the separate short-term score.
-- **Voice** (a bonus) and **deployment to a URL**: listed in PLAN.md as
-  optional.
+- **Voice** (a bonus): listed in PLAN.md as optional, not built.
 - **Cost of disruption** (revenue, shipments per hub): we have no such data,
   so the score measures exposure, not financial impact.
 
@@ -417,8 +417,8 @@ Out of scope, on purpose:
 - Conversation history lives in memory: it is lost when the server
   restarts, sessions never expire, and it works for one server process only.
   Two requests in the same session at the same moment are not guarded.
-- The agent answers only from our hubs and data; it cannot fetch forecasts
-  or other sources.
+- The agent answers only from our hubs and our tools (NRI, Open-Meteo
+  history and the 7-day forecast); it cannot search the web or other sources.
 - The observed-weather scales (e.g. 40 snow days = 100) are judgment calls.
   They are one line each in `app/scoring_config.py`.
 - Heavy rain is only a partial proxy for flooding (it misses storm surge and

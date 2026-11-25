@@ -45,7 +45,7 @@
 4. **Agent:** Claude tool-use loop. Tools: `list_hubs`, `get_hub_metrics`, `rank_hubs`, `compare_hubs`. Final answer follows a Pydantic schema (answer, ranking, reasoning, assumptions, confidence). Small command-line chat for manual testing.
 5. **API:** `POST /chat` (with `session_id`), `GET /hubs`, `GET /scores`.
 6. **Chat UI:** a single HTML page that calls `/chat`.
-7. **Eval set:** 24 questions (assignment, rankings, single numbers, follow-ups, traps) with expected checks, and a runner script.
+7. **Eval set:** 24 questions (25 after the forecast tool was added) (assignment, rankings, single numbers, follow-ups, traps) with expected checks, and a runner script.
 8. **Wrap-up:** finish README.md and DESIGN.md, then DESCRIPTION.md.
    Optional, only if time is left, in this order:
    - OpenFEMA `get_disaster_history` tool (context only)
@@ -60,3 +60,6 @@
 
 ## Reminder
 - Export the full session with the AI agent at the end (mandatory deliverable).
+  Done in `docs/ai-session/` (user and assistant messages in full, one line per
+  tool call, tool outputs left out, secrets redacted). Re-export at the very end
+  so the last session is complete.

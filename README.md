@@ -11,6 +11,7 @@ API docs: https://weather-risk-agent-sz0f.onrender.com/docs
 
 - How it works and why: [DESIGN.md](DESIGN.md)
 - One-page summary: [DESCRIPTION.md](DESCRIPTION.md)
+- The full AI agent session (plan + build): [docs/ai-session/](docs/ai-session/README.md)
 
 ## Quick start
 
