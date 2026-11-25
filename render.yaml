@@ -1,0 +1,22 @@
+# Render blueprint: one free web service, deployed from this repo.
+# Secrets marked "sync: false" are typed into the Render dashboard on the
+# first deploy; they are never stored in git.
+services:
+  - type: web
+    name: weather-risk-agent
+    runtime: python
+    plan: free
+    # Install, then fill the data cache (FEMA NRI + 5 years of weather for
+    # every hub) during the build, so the first question is fast.
+    buildCommand: pip install -r requirements.txt && python -m app.scoring
+    startCommand: uvicorn app.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /hubs
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.2
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ALERT_TOKEN
+        generateValue: true
+      - key: ALERT_WEBHOOK_URL
+        sync: false

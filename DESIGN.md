@@ -162,6 +162,15 @@ call `alerts.py`.)
     no duplicate checks when the server runs several workers. It needs the
     `X-Alert-Token` header (`ALERT_TOKEN`, compared in constant time), so
     strangers can't trigger it; with no token configured it is disabled.
+    *No scheduled scan in the deployed demo (decided):* a schedule (cron
+    or GitHub Actions calling the endpoint every few hours) was planned,
+    then dropped. On Render's free plan the disk is wiped whenever the
+    server sleeps, so every scheduled check would only save a new
+    baseline and never alert, and in an interview a schedule shows
+    nothing that can be watched live. The alert is demonstrated with
+    `scripts/demo_alerts.py` and a manual `POST /alerts/check`. Real
+    scheduling needs persistent storage (a paid disk or an external
+    database) plus one scheduler entry; the code needs no change.
   - *Delivery:* every alert is saved and listed at `GET /alerts`. If
     `ALERT_WEBHOOK_URL` is set, alerts are also POSTed there as JSON
     (standard library only). The payload starts with a `text` field: one
@@ -184,6 +193,30 @@ call `alerts.py`.)
   is unambiguous.
 - **Tools return breakdowns, not just scores**, so Claude can explain *why*
   (e.g. "Detroit's ice storms are more frequent than in 98% of counties").
+
+## Deployment
+- **Render, free web service**, defined in `render.yaml` (in the repo, so
+  the setup can be read and reviewed). It deploys from GitHub on every
+  push to `main`.
+- **Build:** `pip install -r requirements.txt && python -m app.scoring`.
+  The second command fills the data cache (FEMA NRI + 5 years of weather
+  per hub, ~2 minutes, ~5 MB) at build time, so the first question doesn't
+  wait for downloads. Forecasts are never cached, so they stay live.
+- **Start:** `uvicorn app.api:app --host 0.0.0.0 --port $PORT`; Render
+  checks `/hubs` to know the app is up.
+- **Secrets** are environment variables set in the Render dashboard
+  (`ANTHROPIC_API_KEY`, `ALERT_WEBHOOK_URL`), never in git; Render
+  generates `ALERT_TOKEN`.
+- **Dependencies are pinned** in `requirements.txt` to the versions the
+  tests pass with.
+- **The chat is open**, without a password: it is a short-lived demo,
+  Haiku costs ~$0.001 per question, and a monthly spend limit in the
+  Anthropic console caps the damage if the URL leaks. A longer-lived
+  deployment would add a login.
+- **Free-plan trade-offs:** the server sleeps after ~15 minutes idle (the
+  next request takes ~30-60 s), and its disk is wiped on every restart,
+  so chat sessions and alert history reset (the data cache is rebuilt
+  with the next deploy).
 
 ## Repository structure
 
@@ -217,6 +250,7 @@ scripts/
   chat.py       command-line chat with the agent (manual testing)
   eval.py       runs the eval set against the real agent
   demo_alerts.py  alert demo: baseline, in-memory scale change, re-check
+render.yaml     Render deployment blueprint
 tests/        unit tests (external APIs and Claude are mocked)
 ```
 

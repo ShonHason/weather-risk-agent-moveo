@@ -179,6 +179,22 @@ second check, and sends the resulting alerts to `ALERT_WEBHOOK_URL`. The
 real history (`data/history.db`) is not touched; delete that file to start
 the real alerts over.
 
+## Deploy to Render (free)
+
+The repo has a blueprint, `render.yaml`. One-time setup:
+
+1. Sign in at https://render.com with GitHub.
+2. **New** -> **Blueprint** -> pick this repository -> **Apply**.
+3. When asked, fill in `ANTHROPIC_API_KEY` and, optionally,
+   `ALERT_WEBHOOK_URL`. Render generates `ALERT_TOKEN` (see it under the
+   service's **Environment** tab).
+4. The first build takes ~3-4 minutes (it downloads the data cache). The
+   app is then at `https://<service-name>.onrender.com`.
+
+Every push to `main` redeploys. On the free plan the app sleeps after ~15
+minutes idle: open it a minute before a demo. Set a monthly spend limit in
+the Anthropic console, since the chat is public.
+
 ## Add a hub
 
 Add one line to `data/hubs.json` with `id`, `name`, `city`, `state`, `lat`,

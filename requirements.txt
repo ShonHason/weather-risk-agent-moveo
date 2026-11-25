@@ -1,9 +1,11 @@
-anthropic
-certifi
-fastapi
-pydantic
-uvicorn
+# Pinned to the versions the tests pass with, so a deploy can't pull an
+# incompatible new release.
+anthropic==2.14.0
+certifi==2026.11.20
+fastapi==0.165.0
+pydantic==2.14.4
+uvicorn==0.54.0
 
 # tests only
-httpx
-pytest
+httpx==0.28.1
+pytest==9.2.0
