@@ -23,22 +23,24 @@ def run_unit_tests():
 def run_smoke_check():
     """Call each real API once for Denver. Uses a temporary cache file,
     so it always hits the network and never touches data/cache.db."""
-    from app import nri, weather
+    from app import metrics, nri, weather
 
     with tempfile.TemporaryDirectory() as folder:
         db = Path(folder) / "smoke.db"
 
         risk = nri.fetch_county_risk("08031", db)
         print(f"NRI OK: {risk['county']}, {risk['state']} "
-              f"({risk['nri_version']}), winter weather score "
-              f"{risk['hazards']['winter_weather']['score']:.1f}")
+              f"({risk['nri_version']}), winter weather "
+              f"{risk['hazards']['winter_weather']['frequency']:.1f} events/year, "
+              f"national percentile "
+              f"{risk['hazards']['winter_weather']['frequency_percentile']}")
 
         days = weather.fetch_daily_weather(
             39.7392, -104.9903, date(2025, 1, 1), date(2025, 12, 31), db
         )
-        snow_days = sum(1 for s in days["snowfall_cm"] if s and s > 0)
-        print(f"Open-Meteo OK: {len(days['date'])} days in 2025, "
-              f"{snow_days} with snowfall")
+        m = metrics.compute_metrics(days)
+        print(f"Open-Meteo OK: {m['days']} days in 2025, "
+              f"{m['snow_days']} with snowfall ({m['snow_days_pct']}%)")
     return 0
 
 

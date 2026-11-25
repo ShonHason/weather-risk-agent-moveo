@@ -4,10 +4,13 @@
 - **LLM:** Claude (official Anthropic SDK), raw tool-use loop, no agent framework.
 - **Structured output:** Pydantic models → JSON schema, validated in code.
 - **Data:**
-  - FEMA National Risk Index (NRI): county-level hazard exposure scores. Main input to the risk score.
+  - FEMA National Risk Index (NRI): county-level hazard data. Main input to the risk score: each hazard's annualized frequency (`AFREQ`) as a national percentile across all US counties. FEMA's `RISKS` score is context only (it is biased toward large counties).
   - Open-Meteo Archive: observed daily weather (snow, rain, wind, temperature). Used for weather statistics and as supporting evidence.
   - OpenFEMA disaster declarations: optional extension, context only, never part of the score (avoids double counting with NRI).
-- **Scoring:** deterministic. Five hazard categories, each 0–100, combined with weights from one config file.
+- **Scoring:** deterministic. Five hazard categories, each 0–100, combined with equal weights (20% each) from one config file (`app/scoring_config.py`).
+  - Category NRI score = the worst (max) hazard frequency percentile in the category. Not-applicable hazards count as 0.
+  - Chronic categories (winter, heat, flood) = 70% NRI + 30% observed weather (snow days / hot days / heavy-rain days per year, on a fixed linear 0–100 scale).
+  - Acute categories (hurricane, severe storm) = NRI only: rare events don't show up reliably in 5 years of weather, and NRI is built from decades of event records.
   - Winter: winter weather, ice storm, cold wave
   - Hurricane: hurricane
   - Flood: riverine flood, coastal flood

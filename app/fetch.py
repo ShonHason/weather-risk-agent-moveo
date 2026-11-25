@@ -7,6 +7,8 @@ macOS have none by default).
 
 import json
 import ssl
+import time
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -15,6 +17,11 @@ import certifi
 from app import cache
 
 SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+
+# Open-Meteo's free tier has a per-minute limit. When we hit it (HTTP 429),
+# wait and try again instead of failing.
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_WAIT_SECONDS = 30
 
 
 def fetch_json(url, params, db_path=cache.DB_PATH):
@@ -25,7 +32,7 @@ def fetch_json(url, params, db_path=cache.DB_PATH):
     if cached is not None:
         return cached
 
-    data = _download(full_url)
+    data = _download_with_retry(full_url)
 
     # Some APIs report errors inside a normal-looking response.
     # Raise instead of caching them, so a later call can retry.
@@ -34,6 +41,17 @@ def fetch_json(url, params, db_path=cache.DB_PATH):
 
     cache.set(full_url, data, db_path)
     return data
+
+
+def _download_with_retry(full_url):
+    """Download, waiting and retrying if the API says we sent too many requests."""
+    for attempt in range(RATE_LIMIT_RETRIES):
+        try:
+            return _download(full_url)
+        except HTTPError as error:
+            if error.code != 429 or attempt == RATE_LIMIT_RETRIES - 1:
+                raise
+            time.sleep(RATE_LIMIT_WAIT_SECONDS)
 
 
 def _download(full_url):

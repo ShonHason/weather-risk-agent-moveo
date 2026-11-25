@@ -21,6 +21,14 @@ python scripts/test.py           # unit tests (mocked, fast, free)
 python scripts/test.py smoke     # one real API call
 ```
 
+## See the risk scores
+
+```bash
+python -m app.scoring            # ranks all hubs (first run downloads data, ~1-2 min)
+```
+
+The weights and scales behind the score are in `app/scoring_config.py`.
+
 ## Add a hub
 
 Add one line to `data/hubs.json` with `id`, `name`, `city`, `state`, `lat`,

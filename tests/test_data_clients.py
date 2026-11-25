@@ -62,22 +62,54 @@ def test_fetch_raises_on_api_error_and_does_not_cache_it(db, fake_download):
 
 # --- NRI -----------------------------------------------------------------
 
-def test_nri_extracts_hazard_scores(db, fake_download):
+def test_nri_extracts_hazard_data(db, fake_download, monkeypatch):
     fake_download.response = {"features": [{"attributes": {
         "COUNTY": "Denver", "STATEABBRV": "CO", "NRI_VER": "December 2025",
         "RISK_SCORE": 95.2, "RISK_RATNG": "Relatively High",
-        "HAIL_RISKS": 99.9, "HAIL_RISKR": "Very High",
-        "HRCN_RISKS": None, "HRCN_RISKR": "Not Applicable",
+        "HAIL_AFREQ": 2.5, "HAIL_RISKS": 99.9, "HAIL_RISKR": "Very High",
+        "HRCN_AFREQ": None, "HRCN_RISKS": None, "HRCN_RISKR": "Not Applicable",
     }}]}
+    # Pretend every hazard has these yearly frequencies across US counties.
+    monkeypatch.setattr(nri, "national_frequencies", lambda db_path: {
+        name: [0.0, 1.0, 2.0, 3.0] for name in nri.NRI_HAZARDS.values()})
 
     result = nri.fetch_county_risk("08031", db)
 
     assert result["county"] == "Denver"
     assert result["overall"] == {"score": 95.2, "rating": "Relatively High"}
-    assert result["hazards"]["hail"] == {"score": 99.9, "rating": "Very High"}
-    assert result["hazards"]["hurricane"]["score"] is None
+    assert result["hazards"]["hail"] == {
+        "frequency": 2.5, "frequency_percentile": 75.0,
+        "risk_score": 99.9, "risk_rating": "Very High"}
+    assert result["hazards"]["hurricane"]["frequency"] is None
+    assert result["hazards"]["hurricane"]["frequency_percentile"] == 0.0
     assert set(result["hazards"]) == set(nri.NRI_HAZARDS.values())
     assert "STCOFIPS%3D%2708031%27" in fake_download.urls[0]
+
+
+def test_percentile_counts_strictly_lower_values():
+    values = [0.0, 0.0, 1.0, 5.0]
+    assert nri.percentile(0.0, values) == 0.0
+    assert nri.percentile(None, values) == 0.0
+    assert nri.percentile(1.0, values) == 50.0
+    assert nri.percentile(9.0, values) == 100.0
+
+
+def test_national_frequencies_reads_every_page(db, monkeypatch):
+    monkeypatch.setattr(nri, "PAGE_SIZE", 2)
+
+    def county(hail):
+        attributes = {f"{prefix}_AFREQ": 0.0 for prefix in nri.NRI_HAZARDS}
+        attributes["HAIL_AFREQ"] = hail
+        return {"attributes": attributes}
+
+    pages = {"0": [county(3.0), county(None)], "2": [county(1.0)]}
+
+    def paged_download(full_url):
+        offset = full_url.split("resultOffset=")[1].split("&")[0]
+        return {"features": pages[offset]}
+
+    monkeypatch.setattr(fetch, "_download", paged_download)
+    assert nri.national_frequencies(db)["hail"] == [0.0, 1.0, 3.0]
 
 
 def test_nri_raises_for_unknown_county(db, fake_download):
@@ -112,3 +144,18 @@ def test_weather_renames_variables_with_units(db, fake_download):
     assert result["snowfall_cm"] == [1.4, 0.0]
     assert result["wind_gust_max_kmh"] == [40.0, 22.3]
     assert "start_date=2025-01-01" in fake_download.urls[0]
+
+
+def test_fetch_retries_after_rate_limit(db, monkeypatch):
+    calls = []
+
+    def flaky_download(full_url):
+        calls.append(full_url)
+        if len(calls) == 1:
+            raise fetch.HTTPError(full_url, 429, "Too Many Requests", None, None)
+        return {"value": 1}
+
+    monkeypatch.setattr(fetch, "_download", flaky_download)
+    monkeypatch.setattr(fetch.time, "sleep", lambda seconds: None)
+    assert fetch.fetch_json("https://example.com", {"x": 1}, db) == {"value": 1}
+    assert len(calls) == 2
