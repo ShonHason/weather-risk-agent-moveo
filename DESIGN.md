@@ -5,7 +5,7 @@ Work in progress. Filled in as the steps are built. See PLAN.md for the agreed d
 ## System architecture
 
 ```
- chat UI / curl
+ chat page (app/static/index.html) / curl
       |  HTTP: POST /chat, GET /hubs, GET /scores
       v
  FastAPI (app/api.py) -- one Agent per session_id, in memory
@@ -55,6 +55,14 @@ Work in progress. Filled in as the steps are built. See PLAN.md for the agreed d
   checked independently of the agent. Errors: invalid input -> 422, agent
   produced no valid answer or Claude rejected the request -> 502, Claude
   API unreachable, rate-limited or down (worth retrying) -> 503.
+- **Chat page** (`app/static/index.html`, served at `/`): one file with
+  plain HTML, CSS and JavaScript, so there is no build step and no frontend
+  framework to explain. It calls `POST /chat` and keeps the `session_id` in
+  memory for follow-ups ("New conversation" reloads the page). Each answer
+  shows a confidence badge, the ranking as a table, and the reasoning and
+  assumptions folded under "How I got this". Model output is inserted as
+  plain text (`textContent`), never as HTML, so an answer cannot inject
+  markup or scripts into the page.
 - **Ranking entries name their category** (`overall`, `winter`, ...), so a
   comparison across hazards (e.g. Miami vs Houston on hurricane and flood)
   is unambiguous.
@@ -76,7 +84,8 @@ app/            application code
   tools.py      the 4 tools Claude can call, and their definitions
   schemas.py    FinalAnswer: the JSON schema of the agent's answer
   agent.py      the Claude tool-use loop and system prompt
-  api.py        FastAPI app: /chat, /hubs, /scores
+  api.py        FastAPI app: /, /chat, /hubs, /scores
+  static/index.html  the chat page (HTML + CSS + plain JavaScript)
   env.py        loads .env (API key)
 data/
   hubs.json     the list of hubs (one line per hub)

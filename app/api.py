@@ -3,16 +3,19 @@
     uvicorn app.api:app --reload      # then open http://127.0.0.1:8000/docs
 
 Endpoints:
+    GET  /         the chat page (app/static/index.html)
     POST /chat     ask the agent; send the same session_id for follow-ups
     GET  /hubs     the list of hubs
     GET  /scores   the deterministic risk ranking (no LLM involved)
 """
 
 import uuid
+from pathlib import Path
 from typing import Literal, Optional
 
 import anthropic
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app import tools
@@ -21,6 +24,8 @@ from app.env import load_env
 from app.schemas import FinalAnswer
 
 load_env()
+
+CHAT_PAGE = Path(__file__).parent / "static" / "index.html"
 
 app = FastAPI(title="Weather Risk Intelligence Agent")
 
@@ -39,6 +44,11 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     answer: FinalAnswer
+
+
+@app.get("/", include_in_schema=False)
+def chat_page():
+    return FileResponse(CHAT_PAGE)
 
 
 @app.post("/chat")

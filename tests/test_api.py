@@ -82,3 +82,10 @@ def test_scores_passes_filters_to_rank_hubs(monkeypatch):
     response = http.get("/scores", params={"category": "heat", "region": "South"})
     assert response.json() == {"ranked_by": "heat", "region": "South"}
     assert http.get("/scores", params={"category": "volcano"}).status_code == 422
+
+
+def test_chat_page_is_served():
+    response = http.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert 'fetch("/chat"' in response.text
